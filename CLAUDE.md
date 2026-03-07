@@ -6,7 +6,7 @@ Cyberpunk graph automaton game. See `.cursor/plans/` for the full design plan.
 github.com/dshlychkou/cyberspace
 
 ## Dependencies
-- github.com/barnowlsnest/go-actorlib/v3 -- Actor model
+- github.com/barnowlsnest/go-actorlib/v4 -- Actor model
 - github.com/barnowlsnest/go-datalib -- Data structures
 - charm.land/bubbletea/v2 -- TUI
 - charm.land/lipgloss/v2 -- TUI styling

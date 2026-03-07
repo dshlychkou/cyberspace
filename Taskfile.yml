@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Build and run the game
+    cmds:
+      - go run ./cmd/cyberspace
+
+  build:
+    desc: Build the binary
+    cmds:
+      - go build -o bin/cyberspace ./cmd/cyberspace
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run ./...
