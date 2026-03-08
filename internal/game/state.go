@@ -9,26 +9,26 @@ import (
 )
 
 type State struct {
-	Network  *network.Network
-	Config   Config
-	Tick     int
-	Paused   bool
-	GameOver bool
-	Won      bool
+	Network *network.Network
+	Config  Config
 
 	Programs map[int]*entity.Program
 	ICEs     map[int]*entity.ICE
 	Viruses  map[int]*entity.Virus
 
-	Resources   Resources
-	CoreHoldLen int // consecutive ticks with enough programs on core
-	Score       int
+	Resources Resources
+	Events    []GameEvent
 
-	Events []GameEvent
-
-	nextEntityID int
 	sched        *scheduler.Scheduler
 	rng          *rand.Rand
+	Tick         int
+	CoreHoldLen  int // consecutive ticks with enough programs on core
+	Score        int
+	nextEntityID int
+
+	Paused   bool
+	GameOver bool
+	Won      bool
 }
 
 type Resources struct {
