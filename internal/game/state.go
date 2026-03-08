@@ -8,27 +8,25 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/scheduler"
 )
 
+const maxStoredEvents = 100
+
 type State struct {
-	Network  *network.Network
-	Config   Config
-	Tick     int
-	Paused   bool
-	GameOver bool
-	Won      bool
-
-	Programs map[int]*entity.Program
-	ICEs     map[int]*entity.ICE
-	Viruses  map[int]*entity.Virus
-
-	Resources   Resources
-	CoreHoldLen int // consecutive ticks with enough programs on core
-	Score       int
-
-	Events []GameEvent
-
-	nextEntityID int
+	Network      *network.Network
+	Config       Config
+	Programs     map[int]*entity.Program
+	ICEs         map[int]*entity.ICE
+	Viruses      map[int]*entity.Virus
+	Resources    Resources
+	Events       []Event
 	sched        *scheduler.Scheduler
 	rng          *rand.Rand
+	Tick         int
+	CoreHoldLen  int // consecutive ticks with enough programs on core
+	Score        int
+	nextEntityID int
+	Paused       bool
+	GameOver     bool
+	Won          bool
 }
 
 type Resources struct {
@@ -37,9 +35,64 @@ type Resources struct {
 	Cycles  int
 }
 
-type GameEvent struct {
-	Tick    int
+type Event struct {
 	Message string
+	Tick    int
+}
+
+type StateSnapshot struct {
+	Resources        Resources
+	Programs         []ProgramSnapshot
+	ICEs             []ICESnapshot
+	Viruses          []VirusSnapshot
+	Nodes            map[uint64]NodeSnapshot
+	Edges            []EdgeSnapshot
+	Events           []Event
+	Tick             int
+	Score            int
+	CoreHoldLen      int
+	CoreWinThreshold int
+	CoreWinDuration  int
+	ProgramSpawnCost int
+	VirusDeployCost  int
+	DataIncome       int
+	DataBurn         int
+	ComputeIncome    int
+	ComputeBurn      int
+	Paused           bool
+	GameOver         bool
+	Won              bool
+}
+
+type ProgramSnapshot struct {
+	NodeID uint64
+	ID     int
+	State  entity.ProgramState
+}
+
+type ICESnapshot struct {
+	NodeID uint64
+	ID     int
+	State  entity.ICEState
+}
+
+type VirusSnapshot struct {
+	NodeID uint64
+	ID     int
+	Age    int
+	MaxAge int
+}
+
+type NodeSnapshot struct {
+	Label    string
+	Entities []int
+	ID       int
+	Type     network.NodeType
+}
+
+type EdgeSnapshot struct {
+	From uint64
+	To   uint64
 }
 
 func NewState(net *network.Network, cfg Config) *State {
@@ -173,13 +226,12 @@ func (s *State) EntitySnapshots() []network.EntitySnapshot {
 }
 
 func (s *State) AddEvent(msg string) {
-	s.Events = append(s.Events, GameEvent{
+	s.Events = append(s.Events, Event{
 		Tick:    s.Tick,
 		Message: msg,
 	})
-	// Keep last 100 events
-	if len(s.Events) > 100 {
-		s.Events = s.Events[len(s.Events)-100:]
+	if len(s.Events) > maxStoredEvents {
+		s.Events = s.Events[len(s.Events)-maxStoredEvents:]
 	}
 }
 
@@ -196,41 +248,75 @@ func (s *State) Snapshot() StateSnapshot {
 		CoreWinDuration:  s.Config.CoreWinDuration,
 		ProgramSpawnCost: s.Config.ProgramSpawnCost,
 		VirusDeployCost:  s.Config.VirusDeployCost,
+		Programs:         s.snapshotPrograms(),
+		ICEs:             s.snapshotICEs(),
+		Viruses:          s.snapshotViruses(),
+		Nodes:            s.snapshotNodes(),
+		Edges:            s.snapshotEdges(),
+		Events:           s.snapshotEvents(),
 	}
+	s.computeEconomyRates(&snap)
+	return snap
+}
 
-	snap.Programs = make([]ProgramSnapshot, 0, len(s.Programs))
+func (s *State) snapshotPrograms() []ProgramSnapshot {
+	out := make([]ProgramSnapshot, 0, len(s.Programs))
 	for _, p := range s.Programs {
-		snap.Programs = append(snap.Programs, ProgramSnapshot{ID: p.ID, NodeID: p.NodeID, State: p.State})
+		out = append(out, ProgramSnapshot{ID: p.ID, NodeID: p.NodeID, State: p.State})
 	}
-	snap.ICEs = make([]ICESnapshot, 0, len(s.ICEs))
-	for _, ice := range s.ICEs {
-		snap.ICEs = append(snap.ICEs, ICESnapshot{ID: ice.ID, NodeID: ice.NodeID, State: ice.State})
-	}
-	snap.Viruses = make([]VirusSnapshot, 0, len(s.Viruses))
-	for _, v := range s.Viruses {
-		snap.Viruses = append(snap.Viruses, VirusSnapshot{ID: v.ID, NodeID: v.NodeID, Age: v.Age, MaxAge: v.MaxAge})
-	}
+	return out
+}
 
-	snap.Nodes = make(map[uint64]NodeSnapshot)
+func (s *State) snapshotICEs() []ICESnapshot {
+	out := make([]ICESnapshot, 0, len(s.ICEs))
+	for _, ice := range s.ICEs {
+		out = append(out, ICESnapshot{ID: ice.ID, NodeID: ice.NodeID, State: ice.State})
+	}
+	return out
+}
+
+func (s *State) snapshotViruses() []VirusSnapshot {
+	out := make([]VirusSnapshot, 0, len(s.Viruses))
+	for _, v := range s.Viruses {
+		out = append(out, VirusSnapshot{ID: v.ID, NodeID: v.NodeID, Age: v.Age, MaxAge: v.MaxAge})
+	}
+	return out
+}
+
+func (s *State) snapshotNodes() map[uint64]NodeSnapshot {
+	out := make(map[uint64]NodeSnapshot, len(s.Network.Nodes))
 	for id, n := range s.Network.Nodes {
-		snap.Nodes[id] = NodeSnapshot{
+		out[id] = NodeSnapshot{
 			ID:       n.ID,
 			Type:     n.Type,
 			Label:    n.Label,
 			Entities: append([]int{}, n.Entities...),
 		}
 	}
+	return out
+}
 
-	snap.Edges = make([]EdgeSnapshot, 0)
+func (s *State) snapshotEdges() []EdgeSnapshot {
+	out := make([]EdgeSnapshot, 0)
 	for _, nodeID := range s.Network.NodeIDs() {
 		for _, neighborID := range s.Network.Neighbors(nodeID) {
-			if nodeID < neighborID { // avoid duplicates
-				snap.Edges = append(snap.Edges, EdgeSnapshot{From: nodeID, To: neighborID})
+			if nodeID < neighborID {
+				out = append(out, EdgeSnapshot{From: nodeID, To: neighborID})
 			}
 		}
 	}
+	return out
+}
 
-	// Compute economy rates
+func (s *State) snapshotEvents() []Event {
+	eventStart := 0
+	if len(s.Events) > s.Config.EventLogSize {
+		eventStart = len(s.Events) - s.Config.EventLogSize
+	}
+	return append([]Event{}, s.Events[eventStart:]...)
+}
+
+func (s *State) computeEconomyRates(snap *StateSnapshot) {
 	for _, p := range s.Programs {
 		node := s.Network.GetNode(p.NodeID)
 		if node != nil {
@@ -250,68 +336,4 @@ func (s *State) Snapshot() StateSnapshot {
 			}
 		}
 	}
-
-	// Copy recent events
-	eventStart := 0
-	if len(s.Events) > 20 {
-		eventStart = len(s.Events) - 20
-	}
-	snap.Events = append([]GameEvent{}, s.Events[eventStart:]...)
-
-	return snap
-}
-
-type StateSnapshot struct {
-	Tick             int
-	Paused           bool
-	GameOver         bool
-	Won              bool
-	Resources        Resources
-	Score            int
-	CoreHoldLen      int
-	CoreWinThreshold int
-	CoreWinDuration  int
-	ProgramSpawnCost int
-	VirusDeployCost  int
-	DataIncome       int
-	DataBurn         int
-	ComputeIncome    int
-	ComputeBurn      int
-	Programs         []ProgramSnapshot
-	ICEs             []ICESnapshot
-	Viruses          []VirusSnapshot
-	Nodes            map[uint64]NodeSnapshot
-	Edges            []EdgeSnapshot
-	Events           []GameEvent
-}
-
-type ProgramSnapshot struct {
-	ID     int
-	NodeID uint64
-	State  entity.ProgramState
-}
-
-type ICESnapshot struct {
-	ID     int
-	NodeID uint64
-	State  entity.ICEState
-}
-
-type VirusSnapshot struct {
-	ID     int
-	NodeID uint64
-	Age    int
-	MaxAge int
-}
-
-type NodeSnapshot struct {
-	ID       int
-	Type     network.NodeType
-	Label    string
-	Entities []int
-}
-
-type EdgeSnapshot struct {
-	From uint64
-	To   uint64
 }

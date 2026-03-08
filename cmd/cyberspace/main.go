@@ -18,25 +18,25 @@ func main() {
 
 	cfg := &game.Config{}
 	if _, err := configs.Resolve(cfg, "cyberspace"); err != nil {
-		exitErr("Config error: %v", err)
+		log.Fatalf("Config error: %v", err)
 	}
 
 	model := tui.NewModel(ctx, *cfg)
-
 	p := tea.NewProgram(model)
 
+	var err error
+	doneChan := make(chan struct{})
 	go func() {
+		defer close(doneChan)
 		<-ctx.Done()
-		p.Send(tea.QuitMsg{})
+		stop()
+	}()
+	go func() {
+		<-doneChan
+		p.Quit()
 	}()
 
-	if _, err := p.Run(); err != nil {
-		exitErr("Error running game: %v", err)
+	if _, err = p.Run(); err != nil {
+		log.Fatalf("Error running game: %v", err)
 	}
-
-	model.Shutdown()
-}
-
-func exitErr(format string, args ...any) {
-	log.Fatalf(format, args...)
 }

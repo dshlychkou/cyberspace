@@ -7,7 +7,7 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
-func renderEventLog(events []game.GameEvent, height int) string {
+func renderEventLog(events []game.Event, height int) string {
 	var sb strings.Builder
 
 	sb.WriteString(styleTitle.Render("EVENT LOG"))

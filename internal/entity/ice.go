@@ -4,8 +4,6 @@ type ICEState int
 
 const (
 	ICEPatrolling ICEState = iota
-	ICEPursuing
-	ICESuppressing
 )
 
 type ICE struct {

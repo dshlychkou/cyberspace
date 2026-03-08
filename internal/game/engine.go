@@ -10,6 +10,9 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/scheduler"
 )
 
+// TickCmd advances the game by one tick. The tick pipeline runs in order:
+// scheduled events → virus aging → Conway rules → economy → end conditions.
+// Calls OnComplete with a snapshot when done (including when paused/game over).
 type TickCmd struct {
 	OnComplete func(StateSnapshot)
 }
@@ -23,46 +26,72 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 	}
 
 	s.Tick++
+	s.processScheduledEvents()
+	s.ageViruses()
+	s.applyRules()
+	s.processEconomy()
+	s.checkEndConditions()
 
-	// Process scheduled events
+	s.Score += len(s.Programs)
+	s.Resources.Cycles = s.Tick
+
+	if t.OnComplete != nil {
+		t.OnComplete(s.Snapshot())
+	}
+}
+
+// processScheduledEvents drains the scheduler for the current tick and
+// dispatches each due event to its handler (ICE spawn or escalation).
+func (s *State) processScheduledEvents() {
 	for _, evt := range s.sched.DueEvents(s.Tick) {
 		switch evt.Type {
 		case scheduler.EventICESpawn:
-			candidates := s.Network.NodesByType(network.NodeFirewall)
-			candidates = append(candidates, s.Network.NodesByType(network.NodeServer)...)
-			if len(candidates) > 0 {
-				target := candidates[s.rng.IntN(len(candidates))]
-				s.AddICE(uint64(target.ID))
-				s.AddEvent(fmt.Sprintf("New ICE spawned at %s", target.Label))
-			}
-			// Schedule next recurring spawn
-			interval := max(3, 12-s.Tick/10)
-			s.sched.Schedule(scheduler.Event{
-				Tick:     s.Tick + interval,
-				Priority: 1,
-				Type:     scheduler.EventICESpawn,
-			})
+			s.spawnScheduledICE()
 		case scheduler.EventICEEscalation:
-			// Spawn a burst of ICE across firewalls and core
-			fwNodes := s.Network.NodesByType(network.NodeFirewall)
-			for _, fw := range fwNodes {
-				s.AddICE(uint64(fw.ID))
-			}
-			coreNodes := s.Network.NodesByType(network.NodeCore)
-			for _, core := range coreNodes {
-				s.AddICE(uint64(core.ID))
-			}
-			s.AddEvent("ICE defenses escalating — firewalls and core reinforced!")
-			// Schedule next escalation
-			s.sched.Schedule(scheduler.Event{
-				Tick:     s.Tick + 40,
-				Priority: 0,
-				Type:     scheduler.EventICEEscalation,
-			})
+			s.escalateICE()
 		}
 	}
+}
 
-	// Age viruses
+// spawnScheduledICE places one ICE on a random firewall or server and
+// re-schedules the next spawn. The interval shrinks as ticks increase
+// (min 3 ticks), ramping up pressure over time.
+func (s *State) spawnScheduledICE() {
+	candidates := s.Network.NodesByType(network.NodeFirewall)
+	candidates = append(candidates, s.Network.NodesByType(network.NodeServer)...)
+	if len(candidates) > 0 {
+		target := candidates[s.rng.IntN(len(candidates))]
+		s.AddICE(uint64(target.ID))
+		s.AddEvent(fmt.Sprintf("New ICE spawned at %s", target.Label))
+	}
+	interval := max(3, 12-s.Tick/10)
+	s.sched.Schedule(scheduler.Event{
+		Tick:     s.Tick + interval,
+		Priority: 1,
+		Type:     scheduler.EventICESpawn,
+	})
+}
+
+// escalateICE reinforces all firewalls and core nodes with new ICE in a
+// single burst, then schedules the next escalation 40 ticks later.
+func (s *State) escalateICE() {
+	for _, fw := range s.Network.NodesByType(network.NodeFirewall) {
+		s.AddICE(uint64(fw.ID))
+	}
+	for _, core := range s.Network.NodesByType(network.NodeCore) {
+		s.AddICE(uint64(core.ID))
+	}
+	s.AddEvent("ICE defenses escalating — firewalls and core reinforced!")
+	s.sched.Schedule(scheduler.Event{
+		Tick:     s.Tick + 40,
+		Priority: 0,
+		Type:     scheduler.EventICEEscalation,
+	})
+}
+
+// ageViruses increments each virus's age and removes any that exceeded
+// their lifespan.
+func (s *State) ageViruses() {
 	for id, v := range s.Viruses {
 		v.Tick()
 		if !v.Alive {
@@ -71,8 +100,11 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 			s.RemoveEntity(id)
 		}
 	}
+}
 
-	// Evaluate Conway rules
+// applyRules evaluates Conway-style cellular automata rules across the
+// network and applies the resulting deaths, spawns, moves, and flips.
+func (s *State) applyRules() {
 	snapshots := s.EntitySnapshots()
 	ruleCfg := network.RuleConfig{
 		SurviveMin:  s.Config.SurviveMin,
@@ -81,11 +113,18 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 	}
 	result := network.EvaluateRules(s.Network, snapshots, ruleCfg)
 
-	// Apply deaths with explanations
-	for _, id := range result.Deaths {
+	s.applyDeaths(result.Deaths)
+	s.applySpawns(result.Spawns)
+	s.applyMoves(result.Moves)
+	s.applyFlips(result.Flips)
+}
+
+// applyDeaths removes killed entities and logs the cause. Programs die from
+// ICE outnumbering them on the same node or from insufficient neighbor support.
+func (s *State) applyDeaths(deaths []int) {
+	for _, id := range deaths {
 		if p, ok := s.Programs[id]; ok {
 			node := s.Network.GetNode(p.NodeID)
-			// Determine reason
 			nodeICECount := 0
 			nodeProgramCount := 0
 			for _, ice := range s.ICEs {
@@ -112,9 +151,12 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 		}
 		s.RemoveEntity(id)
 	}
+}
 
-	// Apply spawns with explanations
-	for _, spawn := range result.Spawns {
+// applySpawns creates new entities from Conway auto-spread results.
+// Programs spread to empty nodes when they have enough neighbors.
+func (s *State) applySpawns(spawns []network.SpawnAction) {
+	for _, spawn := range spawns {
 		node := s.Network.GetNode(spawn.NodeID)
 		switch spawn.Kind {
 		case entity.KindProgram:
@@ -123,10 +165,13 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 				node.Label, spawn.NeighborCnt))
 		}
 	}
+}
 
-	// Apply moves
+// applyMoves relocates ICE entities that are patrolling toward nodes with
+// programs. Each entity moves at most once per tick (dedup by entity ID).
+func (s *State) applyMoves(moves []network.MoveAction) {
 	moved := make(map[int]bool)
-	for _, move := range result.Moves {
+	for _, move := range moves {
 		if moved[move.EntityID] {
 			continue
 		}
@@ -144,39 +189,53 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 				fromNode, toNode.Label))
 		}
 	}
+}
 
-	// Apply flips (virus converts ICE)
-	for _, flip := range result.Flips {
+// applyFlips converts ICE entities into programs when a virus on an
+// adjacent node corrupts them.
+func (s *State) applyFlips(flips []network.FlipAction) {
+	for _, flip := range flips {
 		if _, ok := s.ICEs[flip.EntityID]; ok {
 			node := s.Network.GetNode(flip.NodeID)
 			s.FlipICEToProgram(flip.EntityID)
 			s.AddEvent(fmt.Sprintf("Virus corrupted ICE → Program at %s", node.Label))
 		}
 	}
+}
 
-	// Harvest resources from data nodes
+// processEconomy runs the three economy phases in order: harvest income
+// from vaults/relays, deduct program upkeep, then deduct core hold cost.
+func (s *State) processEconomy() {
+	s.harvestResources()
+	s.applyUpkeep()
+	s.applyCoreHoldCost()
+}
+
+// harvestResources grants Data for each program on a vault (+DataHarvestRate)
+// and Compute for each program on a relay (+2).
+func (s *State) harvestResources() {
 	for _, p := range s.Programs {
 		node := s.Network.GetNode(p.NodeID)
-		if node != nil && node.Type == network.NodeVault {
+		if node == nil {
+			continue
+		}
+		switch node.Type {
+		case network.NodeVault:
 			s.Resources.Data += s.Config.DataHarvestRate
 			s.Score += s.Config.DataHarvestRate
-		}
-	}
-
-	// Compute from relays
-	for _, p := range s.Programs {
-		node := s.Network.GetNode(p.NodeID)
-		if node != nil && node.Type == network.NodeRelay {
+		case network.NodeRelay:
 			s.Resources.Compute += 2
 		}
 	}
+}
 
-	// Program upkeep: each program costs Data per tick
+// applyUpkeep deducts Data for each living program. If Data goes negative,
+// it's clamped to zero and one random program starves per tick.
+func (s *State) applyUpkeep() {
 	upkeep := len(s.Programs) * s.Config.ProgramUpkeep
 	s.Resources.Data -= upkeep
 	if s.Resources.Data < 0 {
 		s.Resources.Data = 0
-		// Starvation: kill one random program per tick while bankrupt
 		for id, p := range s.Programs {
 			node := s.Network.GetNode(p.NodeID)
 			s.RemoveEntity(id)
@@ -184,22 +243,18 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 			break
 		}
 	}
+}
 
-	// Core hold cost: programs on core drain Compute
+// applyCoreHoldCost deducts Compute for each program occupying a core node.
+// If Compute goes negative, one program is ejected from the core.
+func (s *State) applyCoreHoldCost() {
 	coreNodes := s.Network.NodesByType(network.NodeCore)
-	programsOnCore := 0
-	for _, core := range coreNodes {
-		for _, eid := range core.Entities {
-			if _, ok := s.Programs[eid]; ok {
-				programsOnCore++
-			}
-		}
-	}
+	programsOnCore := s.countProgramsOnCore(coreNodes)
+
 	coreCost := programsOnCore * s.Config.CoreHoldCost
 	s.Resources.Compute -= coreCost
 	if s.Resources.Compute < 0 {
 		s.Resources.Compute = 0
-		// Kill one program on core if can't sustain
 		if programsOnCore > 0 && len(coreNodes) > 0 {
 			for _, eid := range coreNodes[0].Entities {
 				if _, ok := s.Programs[eid]; ok {
@@ -210,17 +265,14 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 			}
 		}
 	}
+}
 
-	// Check win condition: programs on core
-	// (recount after possible core starvation)
-	programsOnCore = 0
-	for _, core := range coreNodes {
-		for _, eid := range core.Entities {
-			if _, ok := s.Programs[eid]; ok {
-				programsOnCore++
-			}
-		}
-	}
+// checkEndConditions evaluates win/lose. Win: hold >= CoreWinThreshold
+// programs on core for CoreWinDuration consecutive ticks. Lose: all
+// programs destroyed after tick 5.
+func (s *State) checkEndConditions() {
+	coreNodes := s.Network.NodesByType(network.NodeCore)
+	programsOnCore := s.countProgramsOnCore(coreNodes)
 
 	if programsOnCore >= s.Config.CoreWinThreshold {
 		s.CoreHoldLen++
@@ -240,21 +292,29 @@ func (t *TickCmd) Execute(_ context.Context, s *State) {
 		s.CoreHoldLen = 0
 	}
 
-	// Check lose condition: no programs left
 	if len(s.Programs) == 0 && s.Tick > 5 {
 		s.GameOver = true
 		s.Won = false
 		s.AddEvent("All programs destroyed. Game over.")
 	}
-
-	s.Score += len(s.Programs)
-	s.Resources.Cycles = s.Tick
-
-	if t.OnComplete != nil {
-		t.OnComplete(s.Snapshot())
-	}
 }
 
+// countProgramsOnCore returns the total number of player programs across
+// all core nodes.
+func (s *State) countProgramsOnCore(coreNodes []*network.Node) int {
+	count := 0
+	for _, core := range coreNodes {
+		for _, eid := range core.Entities {
+			if _, ok := s.Programs[eid]; ok {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// SpawnProgramCmd places a new program on the given node if the player
+// has enough Data. Deducts ProgramSpawnCost on success.
 type SpawnProgramCmd struct {
 	NodeID     uint64
 	OnComplete func(bool, string)
@@ -284,6 +344,8 @@ func (c *SpawnProgramCmd) Execute(_ context.Context, s *State) {
 	}
 }
 
+// DeployVirusCmd places a virus on the given node if the player has enough
+// Compute. The virus corrupts adjacent ICE, converting them into programs.
 type DeployVirusCmd struct {
 	NodeID     uint64
 	OnComplete func(bool, string)
@@ -313,12 +375,16 @@ func (c *DeployVirusCmd) Execute(_ context.Context, s *State) {
 	}
 }
 
+// TogglePauseCmd flips the paused flag. While paused, TickCmd still
+// returns a snapshot but skips all simulation.
 type TogglePauseCmd struct{}
 
 func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
 }
 
+// GetStateCmd returns a snapshot of the current state without advancing
+// the simulation. Used by the TUI to fetch state on demand.
 type GetStateCmd struct {
 	OnComplete func(StateSnapshot)
 }
@@ -329,6 +395,9 @@ func (c *GetStateCmd) Execute(_ context.Context, s *State) {
 	}
 }
 
+// InitGame creates a fully initialized game state: generates the network,
+// places initial programs on one server (clustered for mutual support),
+// places ICE on firewalls and core, and schedules recurring ICE events.
 func InitGame(cfg Config) *State {
 	rng := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
 	net := network.Generate(rng)

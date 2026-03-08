@@ -21,4 +21,5 @@ type Config struct {
 	InitialCompute    int           `name:"initial_compute"    default:"25"   usage:"starting compute resource"`
 	ICESpawnTick      int           `name:"ice_spawn_tick"     default:"8"    usage:"tick when first new ICE spawns"`
 	ICEEscalationTick int           `name:"ice_escalation_tick" default:"25"  usage:"tick when ICE spawns start accelerating"`
+	EventLogSize      int           `name:"event_log_size"      default:"20"  usage:"events shown in snapshot"`
 }
