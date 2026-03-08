@@ -230,6 +230,27 @@ func (s *State) Snapshot() StateSnapshot {
 		}
 	}
 
+	// Compute economy rates
+	for _, p := range s.Programs {
+		node := s.Network.GetNode(p.NodeID)
+		if node != nil {
+			switch node.Type {
+			case network.NodeVault:
+				snap.DataIncome += s.Config.DataHarvestRate
+			case network.NodeRelay:
+				snap.ComputeIncome += 2
+			}
+		}
+	}
+	snap.DataBurn = len(s.Programs) * s.Config.ProgramUpkeep
+	for _, core := range s.Network.NodesByType(network.NodeCore) {
+		for _, eid := range core.Entities {
+			if _, ok := s.Programs[eid]; ok {
+				snap.ComputeBurn += s.Config.CoreHoldCost
+			}
+		}
+	}
+
 	// Copy recent events
 	eventStart := 0
 	if len(s.Events) > 20 {
@@ -252,6 +273,10 @@ type StateSnapshot struct {
 	CoreWinDuration  int
 	ProgramSpawnCost int
 	VirusDeployCost  int
+	DataIncome       int
+	DataBurn         int
+	ComputeIncome    int
+	ComputeBurn      int
 	Programs         []ProgramSnapshot
 	ICEs             []ICESnapshot
 	Viruses          []VirusSnapshot

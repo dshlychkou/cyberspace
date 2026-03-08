@@ -92,17 +92,11 @@ func EvaluateRules(net *Network, entities []EntitySnapshot, cfg RuleConfig) Rule
 			// Support = co-located programs (excluding self) + neighbor programs
 			support := localPrograms - 1 + neighborPrograms
 
-			// Safe zones: vaults and relays don't need neighbor support
-			surviveMin := cfg.SurviveMin
-			if node.Type == NodeVault || node.Type == NodeRelay {
-				surviveMin = 0
-			}
-
-			if support < surviveMin || support > cfg.SurviveMax {
+			if support < cfg.SurviveMin || support > cfg.SurviveMax {
 				alive = false
 			}
-			// ICE on same node outnumbers local programs → die
-			if nodeICE[nodeID] > localPrograms {
+			// ICE on same node meets or outnumbers programs → die
+			if nodeICE[nodeID] >= localPrograms {
 				alive = false
 			}
 			if !alive {
@@ -126,9 +120,9 @@ func EvaluateRules(net *Network, entities []EntitySnapshot, cfg RuleConfig) Rule
 		}
 
 		// --- ICE rules ---
-		// Suppress: ICE kills programs where ICE > programs on same node
+		// Suppress: ICE kills programs where ICE >= programs on same node
 		if nodeICE[nodeID] > 0 && nodePrograms[nodeID] > 0 {
-			if nodeICE[nodeID] > nodePrograms[nodeID] {
+			if nodeICE[nodeID] >= nodePrograms[nodeID] {
 				for _, e := range nodeEntityIDs[nodeID] {
 					if e.Kind == entity.KindProgram {
 						result.Deaths = append(result.Deaths, e.ID)

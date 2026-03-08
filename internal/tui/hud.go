@@ -4,17 +4,24 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
 func renderHUD(snap game.StateSnapshot, width int) string {
-	title := styleTitle.Render("CYBERSPACE")
+	title := lipgloss.NewStyle().Bold(true).Foreground(colorNeonPurple).Render("CYBERSPACE")
 
 	tickStr := styleHUD.Render(fmt.Sprintf("Tick:%d", snap.Tick))
 
 	// Programs / ICE counts
 	progStr := styleProgram.Render(fmt.Sprintf("%dP", len(snap.Programs)))
 	iceStr := styleICE.Render(fmt.Sprintf("%dI", len(snap.ICEs)))
+
+	// Economy: net income/burn
+	dataNet := snap.DataIncome - snap.DataBurn
+	dataStr := formatRate("D", snap.Resources.Data, dataNet)
+	computeNet := snap.ComputeIncome - snap.ComputeBurn
+	computeStr := formatRate("C", snap.Resources.Compute, computeNet)
 
 	// Status
 	statusStr := ""
@@ -33,7 +40,7 @@ func renderHUD(snap game.StateSnapshot, width int) string {
 		}
 	}
 
-	// Core hold progress — the central mechanic, make it visible
+	// Core hold progress
 	coreStr := ""
 	if snap.CoreHoldLen > 0 {
 		held := snap.CoreHoldLen
@@ -42,7 +49,7 @@ func renderHUD(snap game.StateSnapshot, width int) string {
 		coreStr = styleScore.Render(fmt.Sprintf(" CORE[%s %d/%d]", bar, held, total))
 	}
 
-	left := title + " " + tickStr + " " + progStr + " " + iceStr + statusStr + coreStr
+	left := title + " " + tickStr + " " + progStr + " " + iceStr + " " + dataStr + " " + computeStr + statusStr + coreStr
 
 	// Threat bar on right
 	iceCount := len(snap.ICEs)
@@ -60,6 +67,18 @@ func renderHUD(snap game.StateSnapshot, width int) string {
 	}
 
 	return left + strings.Repeat(" ", gap) + right
+}
+
+func formatRate(label string, current, net int) string {
+	rateStr := ""
+	if net > 0 {
+		rateStr = styleScore.Render(fmt.Sprintf("+%d", net))
+	} else if net < 0 {
+		rateStr = styleError.Render(fmt.Sprintf("%d", net))
+	} else {
+		rateStr = styleEvent.Render("+0")
+	}
+	return styleHUD.Render(fmt.Sprintf("%s:%d", label, current)) + rateStr
 }
 
 func renderProgressBar(current, total, barLen int) string {

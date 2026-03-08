@@ -21,12 +21,7 @@ func main() {
 		exitErr("Config error: %v", err)
 	}
 
-	gameState := game.InitGame(*cfg)
-
-	model, err := tui.NewModel(ctx, gameState)
-	if err != nil {
-		exitErr("Error: %v", err)
-	}
+	model := tui.NewModel(ctx, *cfg)
 
 	p := tea.NewProgram(model)
 
