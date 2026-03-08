@@ -301,12 +301,12 @@ func InitGame(cfg Config) *State {
 
 	// Schedule ICE escalation
 	s.sched.Schedule(scheduler.Event{
-		Tick:     30,
+		Tick:     cfg.ICESpawnTick,
 		Priority: 1,
 		Type:     scheduler.EventICESpawn,
 	})
 	s.sched.Schedule(scheduler.Event{
-		Tick:     80,
+		Tick:     cfg.ICEEscalationTick,
 		Priority: 0,
 		Type:     scheduler.EventICEEscalation,
 	})

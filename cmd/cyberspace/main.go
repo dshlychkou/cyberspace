@@ -5,13 +5,19 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/barnowlsnest/go-configlib/v2/pkg/configs"
 	"github.com/dshlychkou/cyberspace/internal/game"
 	"github.com/dshlychkou/cyberspace/internal/tui"
 )
 
 func main() {
-	cfg := game.DefaultConfig()
-	gameState := game.InitGame(cfg)
+	cfg := &game.Config{}
+	if _, err := configs.Resolve(cfg, "cyberspace"); err != nil {
+		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	gameState := game.InitGame(*cfg)
 
 	model, err := tui.NewModel(gameState)
 	if err != nil {
