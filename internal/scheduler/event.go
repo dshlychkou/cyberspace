@@ -5,7 +5,6 @@ type EventType int
 const (
 	EventICESpawn EventType = iota
 	EventICEEscalation
-	EventVirusDecay
 )
 
 type Event struct {

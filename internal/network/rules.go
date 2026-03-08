@@ -20,27 +20,27 @@ type RuleResult struct {
 }
 
 type SpawnAction struct {
-	Kind        entity.Kind
-	NodeID      uint64
 	Reason      string
+	NodeID      uint64
+	Kind        entity.Kind
 	NeighborCnt int
 }
 
 type MoveAction struct {
-	EntityID int
 	ToNodeID uint64
+	EntityID int
 }
 
 // FlipAction represents a virus converting an ICE entity into a program.
 type FlipAction struct {
-	EntityID int
 	NodeID   uint64
+	EntityID int
 }
 
 type EntitySnapshot struct {
+	NodeID uint64
 	ID     int
 	Kind   entity.Kind
-	NodeID uint64
 }
 
 // nodeContext holds pre-computed entity counts and neighbor data for a single

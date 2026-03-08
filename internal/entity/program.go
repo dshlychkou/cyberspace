@@ -4,8 +4,6 @@ type ProgramState int
 
 const (
 	ProgramSpreading ProgramState = iota
-	ProgramDefending
-	ProgramHarvesting
 )
 
 type Program struct {
