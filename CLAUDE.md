@@ -1,6 +1,6 @@
 # CYBERSPACE
 
-Cyberpunk graph automaton game. See `.cursor/plans/` for the full design plan.
+Terminal network strategy game (WIP). See `.cursor/plans/` for the full design plan.
 
 ## Module
 github.com/dshlychkou/cyberspace

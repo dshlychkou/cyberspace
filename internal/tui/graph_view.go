@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
+	"math"
 	"sort"
 	"strings"
 
@@ -9,139 +11,303 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/network"
 )
 
-func renderNodeList(snap game.StateSnapshot, selectedIdx int, nodeIDs []uint64, width int) string {
-	// Pre-build adjacency for showing connections inline
-	adj := buildAdjacency(snap)
-
-	var sb strings.Builder
-
-	// Group nodes by type
-	type group struct {
-		title string
-		hint  string
-		ids   []uint64
-	}
-	groups := []group{
-		{"SERVERS", "", nil},
-		{"RELAYS", "+2 Compute/tick", nil},
-		{"VAULTS", "+5 Data/tick", nil},
-		{"FIREWALLS", "blocks auto-spread, ICE spawns here", nil},
-		{"CORE", "target — hold to win!", nil},
-	}
-
-	for _, id := range nodeIDs {
-		n := snap.Nodes[id]
-		switch n.Type {
-		case network.NodeServer:
-			groups[0].ids = append(groups[0].ids, id)
-		case network.NodeRelay:
-			groups[1].ids = append(groups[1].ids, id)
-		case network.NodeVault:
-			groups[2].ids = append(groups[2].ids, id)
-		case network.NodeFirewall:
-			groups[3].ids = append(groups[3].ids, id)
-		case network.NodeCore:
-			groups[4].ids = append(groups[4].ids, id)
-		}
-	}
-
-	// Track which index we're at overall
-	idx := 0
-	for _, g := range groups {
-		if len(g.ids) == 0 {
-			continue
-		}
-
-		// Group header
-		header := styleTitle.Render(g.title)
-		if g.hint != "" {
-			header += styleEvent.Render(" (" + g.hint + ")")
-		}
-		sb.WriteString("  " + header + "\n")
-
-		for _, id := range g.ids {
-			n := snap.Nodes[id]
-			programs, ices, viruses := countEntities(n, snap)
-
-			// Selection cursor
-			cursor := "  "
-			if idx == selectedIdx {
-				cursor = styleSelected.Render("> ")
-			}
-
-			// Node symbol + label
-			sym := network.NodeType(n.Type).Symbol()
-			var nodeStr string
-			switch n.Type {
-			case network.NodeCore:
-				nodeStr = styleCore.Render(sym + " " + n.Label)
-			case network.NodeFirewall:
-				nodeStr = styleFirewall.Render(sym + " " + n.Label)
-			case network.NodeVault:
-				nodeStr = styleData.Render(sym + " " + n.Label)
-			case network.NodeRelay:
-				nodeStr = styleRelay.Render(sym + " " + n.Label)
-			default:
-				nodeStr = styleServer.Render(sym + " " + n.Label)
-			}
-
-			// Entity tags
-			var tags []string
-			if programs > 0 {
-				tags = append(tags, styleProgram.Render(fmt.Sprintf("%dP", programs)))
-			}
-			if ices > 0 {
-				tags = append(tags, styleICE.Render(fmt.Sprintf("%dI", ices)))
-			}
-			if viruses > 0 {
-				tags = append(tags, styleVirus.Render(fmt.Sprintf("%dV", viruses)))
-			}
-
-			tagStr := ""
-			if len(tags) > 0 {
-				tagStr = " " + strings.Join(tags, " ")
-			}
-
-			// Show connections inline
-			connStr := ""
-			if neighbors, ok := adj[id]; ok && len(neighbors) > 0 {
-				var neighborLabels []string
-				for _, nid := range neighbors {
-					if nn, ok := snap.Nodes[nid]; ok {
-						neighborLabels = append(neighborLabels, nn.Label)
-					}
-				}
-				connStr = styleEvent.Render(" → " + strings.Join(neighborLabels, ", "))
-			}
-
-			sb.WriteString(cursor + nodeStr + tagStr + connStr + "\n")
-			idx++
-		}
-		sb.WriteByte('\n')
-	}
-
-	return sb.String()
+type nodePos struct {
+	x, y int
+	id   uint64
 }
 
-func buildAdjacency(snap game.StateSnapshot) map[uint64][]uint64 {
-	adj := make(map[uint64][]uint64)
-	seen := make(map[[2]uint64]bool)
+func layoutNodes(snap game.StateSnapshot, w, h int) []nodePos {
+	cx := w / 2
+	cy := h / 2
+
+	// Group nodes by type into layers
+	var coreIDs, fwIDs, srvIDs, outerIDs []uint64
+	for id, n := range snap.Nodes {
+		switch n.Type {
+		case network.NodeCore:
+			coreIDs = append(coreIDs, id)
+		case network.NodeFirewall:
+			fwIDs = append(fwIDs, id)
+		case network.NodeServer:
+			srvIDs = append(srvIDs, id)
+		default:
+			outerIDs = append(outerIDs, id)
+		}
+	}
+	sort.Slice(coreIDs, func(i, j int) bool { return coreIDs[i] < coreIDs[j] })
+	sort.Slice(fwIDs, func(i, j int) bool { return fwIDs[i] < fwIDs[j] })
+	sort.Slice(srvIDs, func(i, j int) bool { return srvIDs[i] < srvIDs[j] })
+	sort.Slice(outerIDs, func(i, j int) bool { return outerIDs[i] < outerIDs[j] })
+
+	// Compute max radius that stays within bounds after aspect-ratio scaling.
+	// Generous margins to account for label width (~8 chars) and entity tags below nodes.
+	const marginX = 10 // room for widest label centered on node (e.g. "[★CORE]" = 8 runes)
+	const marginY = 4  // room for entity tags below + legend row at bottom
+	const stretchX = 1.6
+	const stretchY = 0.9
+	maxRx := float64(w/2-marginX) / stretchX
+	maxRy := float64(h/2-marginY) / stretchY
+	maxR := math.Min(maxRx, maxRy)
+	if maxR < 3 {
+		maxR = 3
+	}
+
+	r1 := maxR * 0.30
+	r2 := maxR * 0.60
+	r3 := maxR * 0.82
+
+	var positions []nodePos
+
+	// Core at center
+	for _, id := range coreIDs {
+		positions = append(positions, nodePos{x: cx, y: cy, id: id})
+	}
+
+	// Firewalls - inner ring
+	positions = append(positions, ringLayout(fwIDs, cx, cy, r1, -math.Pi/2, w, h)...)
+
+	// Servers - middle ring
+	positions = append(positions, ringLayout(srvIDs, cx, cy, r2, -math.Pi/2+math.Pi/6, w, h)...)
+
+	// Relays + Vaults - outer ring
+	positions = append(positions, ringLayout(outerIDs, cx, cy, r3, -math.Pi/2+math.Pi/4, w, h)...)
+
+	return positions
+}
+
+func ringLayout(ids []uint64, cx, cy int, radius float64, startAngle float64, w, h int) []nodePos {
+	n := len(ids)
+	if n == 0 {
+		return nil
+	}
+
+	positions := make([]nodePos, n)
+	for i, id := range ids {
+		angle := startAngle + 2*math.Pi*float64(i)/float64(n)
+		x := cx + int(math.Round(radius*math.Cos(angle)*1.6))
+		y := cy + int(math.Round(radius*math.Sin(angle)*0.9))
+		// Clamp to canvas bounds with generous margins for labels and tags.
+		// Left/right: labels are ~8 chars wide, centered on x, so need ~6 chars each side.
+		// Top: 1 row margin. Bottom: tag row + 2 legend rows.
+		x = clampInt(x, 6, w-7)
+		y = clampInt(y, 1, h-5)
+		positions[i] = nodePos{x: x, y: y, id: id}
+	}
+	return positions
+}
+
+func drawLegend(c *canvas, startY, w int) {
+	type legendEntry struct {
+		symbol string
+		label  string
+		fg     color.Color
+	}
+	entries := []legendEntry{
+		{"★", "Core", colorWhite},
+		{"◆", "FW", colorNeonYellow},
+		{"◆", "Srv", colorNeonGreen},
+		{"◇", "Rly", colorDim},
+		{"◆", "Vlt", colorNeonCyan},
+		{"|", "", colorBorder},
+		{"P", "Prog", colorNeonGreen},
+		{"I", "ICE", colorNeonRed},
+		{"V", "Virus", colorNeonMagenta},
+		{"|", "", colorBorder},
+		{"$", "Data", colorNeonCyan},
+		{"~", "Compute", colorNeonGreen},
+		{"×", "Threat", colorNeonRed},
+	}
+
+	x := 1
+	row := startY
+	for _, e := range entries {
+		// Calculate width this entry needs
+		needed := len([]rune(e.symbol)) + len(e.label) + 2
+		if e.label == "" {
+			needed = 2
+		}
+		// Wrap to next row if it won't fit
+		if x+needed > w-1 && x > 1 {
+			row++
+			x = 1
+			if row >= c.h {
+				break
+			}
+		}
+		if e.label == "" {
+			c.drawText(x, row, e.symbol, e.fg)
+			x += 2
+		} else {
+			c.drawText(x, row, e.symbol, e.fg)
+			x += len([]rune(e.symbol))
+			c.drawText(x, row, "="+e.label+" ", colorDim)
+			x += len(e.label) + 2
+		}
+	}
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func renderGraph(snap game.StateSnapshot, selectedIdx int, nodeIDs []uint64, w, h int) string {
+	if w < 20 || h < 10 {
+		return "Terminal too small"
+	}
+
+	positions := layoutNodes(snap, w, h)
+	posMap := make(map[uint64]nodePos)
+	for _, p := range positions {
+		posMap[p.id] = p
+	}
+
+	c := newCanvas(w, h)
+
+	// Determine selected node ID
+	var selectedID uint64
+	if selectedIdx < len(nodeIDs) {
+		selectedID = nodeIDs[selectedIdx]
+	}
+
+	// Draw edges first
 	for _, e := range snap.Edges {
-		if !seen[[2]uint64{e.From, e.To}] {
-			adj[e.From] = append(adj[e.From], e.To)
-			seen[[2]uint64{e.From, e.To}] = true
+		p1, ok1 := posMap[e.From]
+		p2, ok2 := posMap[e.To]
+		if !ok1 || !ok2 {
+			continue
 		}
-		if !seen[[2]uint64{e.To, e.From}] {
-			adj[e.To] = append(adj[e.To], e.From)
-			seen[[2]uint64{e.To, e.From}] = true
+		edgeColor := colorBorder
+		// Highlight edges connected to selected node
+		if e.From == selectedID || e.To == selectedID {
+			edgeColor = colorDim
+		}
+		c.drawLine(p1.x, p1.y, p2.x, p2.y, edgeColor)
+	}
+
+	// Draw flow pulses on top of edges
+	drawFlows(c, snap, posMap)
+
+	// Draw nodes on top
+	for _, pos := range positions {
+		n := snap.Nodes[pos.id]
+		programs, ices, viruses := countEntities(n, snap)
+		isSelected := pos.id == selectedID
+
+		drawNode(c, pos.x, pos.y, n, programs, ices, viruses, isSelected)
+	}
+
+	// Legend at bottom (start at h-2 so it can wrap to h-1 if needed)
+	drawLegend(c, h-2, w)
+
+	return c.render()
+}
+
+func drawNode(c *canvas, x, y int, n game.NodeSnapshot, programs, ices, viruses int, selected bool) {
+	sym := network.NodeType(n.Type).Symbol()
+	label := shortLabel(n)
+
+	// Node color by type
+	nodeColor := nodeColorByType(n.Type)
+
+	// If selected, use bright cyan
+	if selected {
+		nodeColor = colorNeonCyan
+	}
+
+	// Override color if contested (has both programs and ICE)
+	if programs > 0 && ices > 0 {
+		nodeColor = colorNeonYellow
+	}
+
+	// Draw node symbol and label, clamped to canvas bounds
+	nodeText := sym + label
+	if selected {
+		nodeText = "[" + nodeText + "]"
+	}
+	textLen := len([]rune(nodeText))
+	textX := clampInt(x-textLen/2, 0, c.w-textLen)
+	if textX < 0 {
+		textX = 0
+	}
+	c.drawText(textX, y, nodeText, nodeColor)
+
+	// Draw entity indicators below (skip if would overlap legend area at h-2)
+	if y+1 >= c.h-2 {
+		return
+	}
+
+	var tags []string
+	if programs > 0 {
+		tags = append(tags, fmt.Sprintf("%dP", programs))
+	}
+	if ices > 0 {
+		tags = append(tags, fmt.Sprintf("%dI", ices))
+	}
+	if viruses > 0 {
+		tags = append(tags, fmt.Sprintf("%dV", viruses))
+	}
+
+	if len(tags) > 0 {
+		tagStr := strings.Join(tags, " ")
+		tagX := clampInt(x-len(tagStr)/2, 0, c.w-len(tagStr))
+		if tagX < 0 {
+			tagX = 0
+		}
+		// Draw each tag with its own color
+		offset := tagX
+		for i, tag := range tags {
+			var tagColor color.Color
+			if i == 0 && programs > 0 {
+				tagColor = colorNeonGreen
+			} else if (i == 0 && ices > 0) || (i == 1 && programs > 0 && ices > 0) {
+				tagColor = colorNeonRed
+			} else {
+				tagColor = colorNeonMagenta
+			}
+			c.drawText(offset, y+1, tag, tagColor)
+			offset += len(tag) + 1
 		}
 	}
-	// Sort each neighbor list
-	for id := range adj {
-		nids := adj[id]
-		sort.Slice(nids, func(i, j int) bool { return nids[i] < nids[j] })
+}
+
+func shortLabel(n game.NodeSnapshot) string {
+	switch n.Type {
+	case network.NodeCore:
+		return "CORE"
+	case network.NodeFirewall:
+		return fmt.Sprintf("FW%d", n.ID)
+	case network.NodeServer:
+		return fmt.Sprintf("S%d", n.ID)
+	case network.NodeRelay:
+		return fmt.Sprintf("R%d", n.ID)
+	case network.NodeVault:
+		return fmt.Sprintf("V%d", n.ID)
+	default:
+		return fmt.Sprintf("?%d", n.ID)
 	}
-	return adj
+}
+
+func nodeColorByType(t network.NodeType) color.Color {
+	switch t {
+	case network.NodeCore:
+		return colorWhite
+	case network.NodeFirewall:
+		return colorNeonYellow
+	case network.NodeServer:
+		return colorNeonGreen
+	case network.NodeRelay:
+		return colorDim
+	case network.NodeVault:
+		return colorNeonCyan
+	default:
+		return colorWhite
+	}
 }
 
 func renderSelectedDetails(snap game.StateSnapshot, selectedIdx int, nodeIDs []uint64) string {
@@ -153,91 +319,181 @@ func renderSelectedDetails(snap game.StateSnapshot, selectedIdx int, nodeIDs []u
 	n := snap.Nodes[selectedID]
 	programs, ices, viruses := countEntities(n, snap)
 
-	var sb strings.Builder
-
 	sym := network.NodeType(n.Type).Symbol()
-	sb.WriteString(styleTitle.Render("SELECTED: " + sym + " " + n.Label))
-	sb.WriteByte('\n')
 
-	// Find neighbors
-	neighbors := findNeighbors(selectedID, snap)
-	if len(neighbors) > 0 {
-		sb.WriteString("  Links: " + styleEvent.Render(strings.Join(neighbors, ", ")) + "\n")
-	}
+	// Header
+	header := styleTitle.Render("NODE: " + sym + " " + n.Label)
 
-	// Show entities
+	// Entities
 	var entities []string
 	if programs > 0 {
-		entities = append(entities, styleProgram.Render(fmt.Sprintf("%d Program(s)", programs)))
+		entities = append(entities, styleProgram.Render(fmt.Sprintf("%dP", programs)))
 	}
 	if ices > 0 {
-		entities = append(entities, styleICE.Render(fmt.Sprintf("%d ICE", ices)))
+		entities = append(entities, styleICE.Render(fmt.Sprintf("%dI", ices)))
 	}
 	if viruses > 0 {
-		entities = append(entities, styleVirus.Render(fmt.Sprintf("%d Virus(es)", viruses)))
+		entities = append(entities, styleVirus.Render(fmt.Sprintf("%dV", viruses)))
 	}
-	if len(entities) == 0 {
-		entities = append(entities, styleEvent.Render("empty"))
+	entityStr := styleEvent.Render("empty")
+	if len(entities) > 0 {
+		entityStr = strings.Join(entities, " ")
 	}
-	sb.WriteString("  Here:  " + strings.Join(entities, ", ") + "\n")
 
-	// Contextual hint based on node type and state
-	hint := ""
+	// Neighbors
+	neighbors := findNeighbors(selectedID, snap)
+	neighborStr := styleEvent.Render(strings.Join(neighbors, ", "))
+
+	info := header + "  " + entityStr + "  Links: " + neighborStr
+
+	// Contextual hint
+	hint := nodeHint(n, programs, ices, snap)
+	if hint != "" {
+		info += "\n" + styleEvent.Render(">> ") + hint
+	}
+
+	return info
+}
+
+func nodeHint(n game.NodeSnapshot, programs, ices int, snap game.StateSnapshot) string {
 	switch n.Type {
 	case network.NodeFirewall:
 		if ices > 0 && programs == 0 {
-			hint = fmt.Sprintf(
-				"%d ICE here. Deploy a virus on a neighbor to convert ICE into a program, or press S to spawn a program (it survives only if you have more programs than ICE on this node).",
-				ices)
-		} else if ices > 0 && ices >= programs {
-			hint = fmt.Sprintf(
-				"%d ICE vs %d programs — ICE outnumbers you! Your programs will be killed. Spawn more programs (S) or deploy a virus (V) on a neighbor to convert ICE.",
-				ices, programs)
-		} else if programs > 0 {
-			hint = "You hold this firewall. Programs cannot auto-spread from here to CORE — select CORE and press S to place one there."
-		} else {
-			hint = "Programs cannot auto-spread here. Press S to manually place a program (costs Data)."
+			return "ICE here. Deploy a virus (V) on a neighbor or spawn a program (S)."
 		}
+		if ices > 0 && ices >= programs {
+			return fmt.Sprintf("%dI vs %dP — outnumbered! Spawn more (S) or virus (V) a neighbor.", ices, programs)
+		}
+		if programs > 0 {
+			return "Firewall held. Programs can't auto-spread from here to CORE — select CORE and press S."
+		}
+		return "Blocks auto-spread. Press S to manually place a program."
 	case network.NodeCore:
 		if programs >= snap.CoreWinThreshold {
-			hint = fmt.Sprintf(
-				"You have %d programs on CORE! Hold %d+ programs here for %d ticks to win. Keep spawning to defend against ICE.",
-				programs, snap.CoreWinThreshold, snap.CoreWinDuration)
-		} else if programs > 0 {
-			hint = fmt.Sprintf(
-				"You have %d program(s) on CORE but need %d. Select this node and press S to spawn more.",
-				programs, snap.CoreWinThreshold)
-		} else {
-			hint = "This is your target! Programs cannot auto-spread here. Select this node and press S to place a program."
+			return fmt.Sprintf("Holding CORE! %d/%d ticks to win. Defend against ICE.", snap.CoreHoldLen, snap.CoreWinDuration)
 		}
+		if programs > 0 {
+			return fmt.Sprintf("%d/%d programs needed. Press S to spawn more.", programs, snap.CoreWinThreshold)
+		}
+		return "Target node! Select and press S to place a program."
 	case network.NodeVault:
 		if programs > 0 {
-			hint = fmt.Sprintf("Earning +%d Data per tick from %d program(s) here.", programs*5, programs)
-		} else {
-			hint = "Programs on a vault earn Data each tick. Data is used to spawn programs (S)."
+			return fmt.Sprintf("+%d Data/tick from %d program(s).", programs*5, programs)
 		}
+		return "Programs here earn Data each tick."
 	case network.NodeRelay:
 		if programs > 0 {
-			hint = fmt.Sprintf("Earning +%d Compute per tick from %d program(s) here.", programs*2, programs)
-		} else {
-			hint = "Programs on a relay earn Compute each tick. Compute is used to deploy viruses (V)."
+			return fmt.Sprintf("+%d Compute/tick from %d program(s).", programs*2, programs)
 		}
+		return "Programs here earn Compute each tick."
 	default:
 		if programs > 0 {
-			hint = "Programs here auto-spread to connected servers, relays, and vaults (not firewalls or core)."
-		} else {
-			hint = "Programs auto-spread here from neighbors. No action needed."
+			return "Programs auto-spread to connected nodes."
+		}
+		return ""
+	}
+}
+
+type edgeFlow struct {
+	from, to nodePos
+	fg       color.Color
+	symbol   string
+	period   int // ticks per full cycle
+	pulses   int // number of pulses on this edge
+}
+
+func drawFlows(c *canvas, snap game.StateSnapshot, posMap map[uint64]nodePos) {
+	flows := collectFlows(snap, posMap)
+	tick := snap.Tick
+
+	for _, f := range flows {
+		for p := range f.pulses {
+			// Each pulse offset evenly across the period
+			phase := (f.period * p) / f.pulses
+			progress := float64((tick+phase)%f.period) / float64(f.period)
+
+			px := f.from.x + int(float64(f.to.x-f.from.x)*progress)
+			py := f.from.y + int(float64(f.to.y-f.from.y)*progress)
+
+			// Only draw on edge chars or empty space, don't clobber nodes
+			existing := c.get(px, py)
+			switch existing.ch {
+			case " ", "·", "─", "│":
+				c.set(px, py, f.symbol, f.fg)
+			}
 		}
 	}
-	if hint != "" {
-		sb.WriteString("  " + styleEvent.Render(">> ") + hint + "\n")
+}
+
+func collectFlows(snap game.StateSnapshot, posMap map[uint64]nodePos) []edgeFlow {
+	// Build per-node entity counts
+	nodeProg := make(map[uint64]int)
+	nodeICE := make(map[uint64]int)
+	nodeVirus := make(map[uint64]int)
+	for _, p := range snap.Programs {
+		nodeProg[p.NodeID]++
+	}
+	for _, ice := range snap.ICEs {
+		nodeICE[ice.NodeID]++
+	}
+	for _, v := range snap.Viruses {
+		nodeVirus[v.NodeID]++
 	}
 
-	return sb.String()
+	var flows []edgeFlow
+
+	for _, e := range snap.Edges {
+		fromPos, ok1 := posMap[e.From]
+		toPos, ok2 := posMap[e.To]
+		if !ok1 || !ok2 {
+			continue
+		}
+
+		fromNode := snap.Nodes[e.From]
+		toNode := snap.Nodes[e.To]
+
+		// Data harvest: vault with programs → $ flowing outward
+		if fromNode.Type == network.NodeVault && nodeProg[e.From] > 0 {
+			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
+		}
+		if toNode.Type == network.NodeVault && nodeProg[e.To] > 0 {
+			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
+		}
+
+		// Compute harvest: relay with programs → ~ flowing outward
+		if fromNode.Type == network.NodeRelay && nodeProg[e.From] > 0 {
+			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
+		}
+		if toNode.Type == network.NodeRelay && nodeProg[e.To] > 0 {
+			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
+		}
+
+		// ICE threat: node with ICE → × pulsing outward (fast, urgent)
+		if nodeICE[e.From] > 0 {
+			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
+		}
+		if nodeICE[e.To] > 0 {
+			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
+		}
+
+		// Virus corruption: node with virus → ◈ flowing to neighbors
+		if nodeVirus[e.From] > 0 {
+			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
+		}
+		if nodeVirus[e.To] > 0 {
+			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
+		}
+
+		// Program network: both ends have programs → subtle activity
+		if nodeProg[e.From] > 0 && nodeProg[e.To] > 0 {
+			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorDim, symbol: "•", period: 10, pulses: 1})
+		}
+	}
+
+	return flows
 }
 
 func findNeighbors(nodeID uint64, snap game.StateSnapshot) []string {
-	// Build adjacency from edges
 	adj := make(map[uint64]bool)
 	for _, e := range snap.Edges {
 		if e.From == nodeID {
@@ -248,7 +504,6 @@ func findNeighbors(nodeID uint64, snap game.StateSnapshot) []string {
 		}
 	}
 
-	// Sort neighbor IDs
 	nids := make([]uint64, 0, len(adj))
 	for id := range adj {
 		nids = append(nids, id)

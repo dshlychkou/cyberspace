@@ -1,6 +1,6 @@
 # cyberspace
 
-Cyberpunk graph automaton game. Conway's Game of Life on a network graph, in your terminal.
+Terminal network strategy game (WIP).
 
 ## Run
 

@@ -10,14 +10,18 @@ var (
 	colorNeonRed     = lipgloss.Color("#FF073A")
 	colorNeonMagenta = lipgloss.Color("#FF00FF")
 	colorNeonYellow  = lipgloss.Color("#FFE600")
+	colorNeonPurple  = lipgloss.Color("#BF00FF")
+	colorNeonViolet  = lipgloss.Color("#7B2FBE")
+	colorNeonPink    = lipgloss.Color("#FF6EC7")
 	colorWhite       = lipgloss.Color("#FFFFFF")
 	colorDim         = lipgloss.Color("#555555")
+	colorGridDot     = lipgloss.Color("#1A1028")
 	colorBg          = lipgloss.Color("#0A0A0A")
-	colorBorder      = lipgloss.Color("#333333")
+	colorBorder      = lipgloss.Color("#6B2FA0")
 
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorNeonCyan).
+			Foreground(colorNeonPurple).
 			Background(colorBg)
 
 	styleProgram = lipgloss.NewStyle().
@@ -39,14 +43,8 @@ var (
 	styleData = lipgloss.NewStyle().
 			Foreground(colorNeonCyan)
 
-	styleRelay = lipgloss.NewStyle().
-			Foreground(colorDim)
-
-	styleServer = lipgloss.NewStyle().
-			Foreground(colorNeonGreen)
-
 	styleSelected = lipgloss.NewStyle().
-			Foreground(colorNeonCyan).
+			Foreground(colorNeonPink).
 			Bold(true)
 
 	styleEvent = lipgloss.NewStyle().
