@@ -151,7 +151,7 @@ func renderMenu(idx, width, height int) string {
 		"",
 		divider,
 		"",
-		lipgloss.NewStyle().Foreground(colorDim).Render("arrows/jk: navigate  enter: select  q: quit"),
+		lipgloss.NewStyle().Foreground(colorDim).Render("arrows: navigate  enter: select  q: quit"),
 	)
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, menu)
@@ -187,7 +187,7 @@ func renderSettings(cfg game.Config, selectedIdx, width, height int) string {
 	body := strings.Join(rows, "\n")
 
 	footer := lipgloss.NewStyle().Foreground(colorNeonViolet).
-		Render("arrows/jk: navigate  h/l: adjust  esc: back")
+		Render("arrows: navigate  left/right: adjust  esc: back")
 
 	panel := stylePanel.Width(62).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
@@ -217,7 +217,7 @@ func renderAbout(width, height int) string {
 	controls := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Render("Controls") + "\n" +
 		lipgloss.NewStyle().Foreground(colorWhite).Render(
 			"  Space      Toggle pause\n"+
-				"  arrows/jk  Select node\n"+
+				"  arrows     Select node\n"+
 				"  s          Spawn program (costs Data)\n"+
 				"  v          Deploy virus (costs Compute)\n"+
 				"  +/-        Adjust speed\n"+
