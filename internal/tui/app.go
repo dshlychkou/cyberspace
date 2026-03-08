@@ -145,6 +145,15 @@ func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 
+		case "r":
+			if m.state.GameOver {
+				if m.engineRef != nil {
+					_ = m.engineRef.Stop(5 * time.Second)
+					m.engineRef = nil
+				}
+				return m.startGame()
+			}
+
 		case "space":
 			return m, m.sendTogglePause()
 
@@ -429,8 +438,13 @@ func (m Model) sendDeployVirus(nodeID uint64) tea.Cmd {
 	}
 }
 
-func (m *Model) Shutdown() {
+func (m *Model) stopEngine() {
 	if m.engineRef != nil {
 		_ = m.engineRef.Stop(5 * time.Second)
+		m.engineRef = nil
 	}
+}
+
+func (m *Model) Shutdown() {
+	m.stopEngine()
 }

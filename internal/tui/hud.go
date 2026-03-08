@@ -34,9 +34,9 @@ func renderHUD(snap game.StateSnapshot, width int) string {
 	}
 	if snap.GameOver {
 		if snap.Won {
-			statusStr = styleScore.Render(" [YOU WIN!]")
+			statusStr = styleScore.Render(" [YOU WIN! R=NEW GAME]")
 		} else {
-			statusStr = styleError.Render(" [GAME OVER]")
+			statusStr = styleError.Render(" [GAME OVER R=NEW GAME]")
 		}
 	}
 
