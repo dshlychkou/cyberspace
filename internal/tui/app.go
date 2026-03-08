@@ -37,8 +37,7 @@ type StateProvider struct {
 
 func (p *StateProvider) Provide() *game.State { return p.State }
 
-func NewModel(gameState *game.State) (*Model, error) {
-	ctx := context.Background()
+func NewModel(ctx context.Context, gameState *game.State) (*Model, error) {
 	metrics := &middleware.Metrics{}
 
 	// Start paused so the player can read the guide
@@ -119,9 +118,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
-			if m.engineRef != nil {
-				_ = m.engineRef.Stop(5 * time.Second)
-			}
 			return m, tea.Quit
 
 		case "space":
@@ -298,5 +294,11 @@ func (m Model) sendDeployVirus(nodeID uint64) tea.Cmd {
 		case <-time.After(5 * time.Second):
 			return errorMsg("deploy timeout")
 		}
+	}
+}
+
+func (m *Model) Shutdown() {
+	if m.engineRef != nil {
+		_ = m.engineRef.Stop(5 * time.Second)
 	}
 }

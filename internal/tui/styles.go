@@ -5,15 +5,15 @@ import (
 )
 
 var (
-	colorNeonGreen  = lipgloss.Color("#39FF14")
-	colorNeonCyan   = lipgloss.Color("#00FFFF")
-	colorNeonRed    = lipgloss.Color("#FF073A")
+	colorNeonGreen   = lipgloss.Color("#39FF14")
+	colorNeonCyan    = lipgloss.Color("#00FFFF")
+	colorNeonRed     = lipgloss.Color("#FF073A")
 	colorNeonMagenta = lipgloss.Color("#FF00FF")
-	colorNeonYellow = lipgloss.Color("#FFE600")
-	colorWhite      = lipgloss.Color("#FFFFFF")
-	colorDim        = lipgloss.Color("#555555")
-	colorBg         = lipgloss.Color("#0A0A0A")
-	colorBorder     = lipgloss.Color("#333333")
+	colorNeonYellow  = lipgloss.Color("#FFE600")
+	colorWhite       = lipgloss.Color("#FFFFFF")
+	colorDim         = lipgloss.Color("#555555")
+	colorBg          = lipgloss.Color("#0A0A0A")
+	colorBorder      = lipgloss.Color("#333333")
 
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
@@ -49,9 +49,6 @@ var (
 			Foreground(colorNeonCyan).
 			Bold(true)
 
-	styleEdge = lipgloss.NewStyle().
-			Foreground(colorDim)
-
 	styleEvent = lipgloss.NewStyle().
 			Foreground(colorDim)
 
@@ -71,9 +68,6 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
 			Padding(0, 1)
-
-	styleHelp = lipgloss.NewStyle().
-			Foreground(colorDim)
 
 	styleScore = lipgloss.NewStyle().
 			Foreground(colorNeonGreen).

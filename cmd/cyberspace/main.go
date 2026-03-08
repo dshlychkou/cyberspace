@@ -1,27 +1,47 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"context"
+	"log"
+	"os/signal"
+	"syscall"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/barnowlsnest/go-configlib/v2/pkg/configs"
 	"github.com/dshlychkou/cyberspace/internal/game"
 	"github.com/dshlychkou/cyberspace/internal/tui"
 )
 
 func main() {
-	cfg := game.DefaultConfig()
-	gameState := game.InitGame(cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	model, err := tui.NewModel(gameState)
+	cfg := &game.Config{}
+	if _, err := configs.Resolve(cfg, "cyberspace"); err != nil {
+		exitErr("Config error: %v", err)
+	}
+
+	gameState := game.InitGame(*cfg)
+
+	model, err := tui.NewModel(ctx, gameState)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitErr("Error: %v", err)
 	}
 
 	p := tea.NewProgram(model)
+
+	go func() {
+		<-ctx.Done()
+		p.Send(tea.QuitMsg{})
+	}()
+
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running game: %v\n", err)
-		os.Exit(1)
+		exitErr("Error running game: %v", err)
 	}
+
+	model.Shutdown()
+}
+
+func exitErr(format string, args ...any) {
+	log.Fatalf(format, args...)
 }

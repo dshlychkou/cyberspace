@@ -10,8 +10,29 @@ import (
 	"github.com/barnowlsnest/go-actorlib/v4/pkg/middleware"
 )
 
+func testConfig() Config {
+	return Config{
+		TickRate:          1 * time.Second,
+		InitialPrograms:   3,
+		InitialICE:        2,
+		VirusLifespan:     8,
+		CoreWinThreshold:  2,
+		CoreWinDuration:   10,
+		DataHarvestRate:   5,
+		ProgramSpawnCost:  15,
+		VirusDeployCost:   25,
+		SurviveMin:        1,
+		SurviveMax:        6,
+		SpreadExact:       2,
+		InitialData:       100,
+		InitialCompute:    50,
+		ICESpawnTick:      30,
+		ICEEscalationTick: 80,
+	}
+}
+
 func TestInitGame(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := testConfig()
 	state := InitGame(cfg)
 
 	if state == nil {
@@ -30,13 +51,17 @@ func TestInitGame(t *testing.T) {
 		t.Error("expected at least 1 initial ICE")
 	}
 
-	if state.Resources.Data != 100 {
-		t.Errorf("expected 100 initial data, got %d", state.Resources.Data)
+	if state.Resources.Data != cfg.InitialData {
+		t.Errorf("expected %d initial data, got %d", cfg.InitialData, state.Resources.Data)
+	}
+
+	if state.Resources.Compute != cfg.InitialCompute {
+		t.Errorf("expected %d initial compute, got %d", cfg.InitialCompute, state.Resources.Compute)
 	}
 }
 
 func TestSpawnProgram(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := testConfig()
 	state := InitGame(cfg)
 
 	// Pick a node to spawn on
@@ -49,8 +74,6 @@ func TestSpawnProgram(t *testing.T) {
 	initialData := state.Resources.Data
 	state.AddProgram(nodeID)
 
-	initialCount := len(state.Programs) - 1 // before AddProgram
-	_ = initialCount
 	if len(state.Programs) < 2 {
 		t.Errorf("expected at least 2 programs after spawn, got %d", len(state.Programs))
 	}
@@ -62,7 +85,7 @@ func TestSpawnProgram(t *testing.T) {
 }
 
 func TestStateSnapshot(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := testConfig()
 	state := InitGame(cfg)
 	snap := state.Snapshot()
 
@@ -76,6 +99,10 @@ func TestStateSnapshot(t *testing.T) {
 
 	if len(snap.Programs) != len(state.Programs) {
 		t.Errorf("snapshot programs mismatch: %d vs %d", len(snap.Programs), len(state.Programs))
+	}
+
+	if snap.CoreWinThreshold != cfg.CoreWinThreshold {
+		t.Errorf("snapshot CoreWinThreshold mismatch: %d vs %d", snap.CoreWinThreshold, cfg.CoreWinThreshold)
 	}
 }
 
@@ -102,7 +129,7 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 }
 
 func TestTickCmdViaActor(t *testing.T) {
-	state := InitGame(DefaultConfig())
+	state := InitGame(testConfig())
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -124,7 +151,7 @@ func TestTickCmdViaActor(t *testing.T) {
 }
 
 func TestSpawnProgramCmdViaActor(t *testing.T) {
-	state := InitGame(DefaultConfig())
+	state := InitGame(testConfig())
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -161,7 +188,7 @@ func TestSpawnProgramCmdViaActor(t *testing.T) {
 }
 
 func TestMultipleTicksViaActor(t *testing.T) {
-	state := InitGame(DefaultConfig())
+	state := InitGame(testConfig())
 	a := startTestActor(t, state)
 	ctx := context.Background()
 

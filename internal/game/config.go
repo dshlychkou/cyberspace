@@ -3,39 +3,20 @@ package game
 import "time"
 
 type Config struct {
-	TickRate          time.Duration
-	InitialPrograms   int
-	InitialICE        int
-	ICEEscalationRate float64 // ICE spawn rate multiplier per 100 ticks
-	VirusLifespan     int     // ticks before virus decays
-	FirewallDelay     int     // ticks to pass through firewall
-	FirewallOverride  int     // adjacent programs needed to deactivate firewall
-	CoreWinThreshold  int     // programs needed on core
-	CoreWinDuration   int     // consecutive ticks to win
-	DataHarvestRate   int     // resources per tick per program on data node
-	ProgramSpawnCost  int     // resource cost to spawn a program
-	VirusDeployCost   int     // resource cost to deploy a virus
-	SurviveMin        int     // min neighbors to survive
-	SurviveMax        int     // max neighbors to survive
-	SpreadExact       int     // min neighbor count to auto-spread
-}
-
-func DefaultConfig() Config {
-	return Config{
-		TickRate:          1000 * time.Millisecond,
-		InitialPrograms:   3,
-		InitialICE:        2,
-		ICEEscalationRate: 1.2,
-		VirusLifespan:     8,
-		FirewallDelay:     2,
-		FirewallOverride:  4,
-		CoreWinThreshold:  2,
-		CoreWinDuration:   10,
-		DataHarvestRate:   5,
-		ProgramSpawnCost:  15,
-		VirusDeployCost:   25,
-		SurviveMin:        1,
-		SurviveMax:        6,
-		SpreadExact:       2,
-	}
+	TickRate          time.Duration `name:"tick_rate"          default:"1s"   usage:"tick interval (e.g. 500ms, 1s, 2s)"`
+	InitialPrograms   int           `name:"initial_programs"   default:"3"    usage:"starting program count"`
+	InitialICE        int           `name:"initial_ice"        default:"2"    usage:"starting ICE count"`
+	VirusLifespan     int           `name:"virus_lifespan"     default:"8"    usage:"ticks before a virus decays"`
+	CoreWinThreshold  int           `name:"core_win_threshold" default:"2"    usage:"programs needed on core to start winning"`
+	CoreWinDuration   int           `name:"core_win_duration"  default:"10"   usage:"consecutive ticks holding core to win"`
+	DataHarvestRate   int           `name:"data_harvest_rate"  default:"5"    usage:"data earned per tick per program on a vault"`
+	ProgramSpawnCost  int           `name:"program_spawn_cost" default:"15"   usage:"data cost to spawn a program"`
+	VirusDeployCost   int           `name:"virus_deploy_cost"  default:"25"   usage:"compute cost to deploy a virus"`
+	SurviveMin        int           `name:"survive_min"        default:"1"    usage:"min neighbor support for program survival"`
+	SurviveMax        int           `name:"survive_max"        default:"6"    usage:"max neighbor support before overcrowding"`
+	SpreadExact       int           `name:"spread_exact"       default:"2"    usage:"min neighbor programs for auto-spread"`
+	InitialData       int           `name:"initial_data"       default:"100"  usage:"starting data resource"`
+	InitialCompute    int           `name:"initial_compute"    default:"50"   usage:"starting compute resource"`
+	ICESpawnTick      int           `name:"ice_spawn_tick"     default:"30"   usage:"tick when first new ICE spawns"`
+	ICEEscalationTick int           `name:"ice_escalation_tick" default:"80"  usage:"tick when ICE spawns start accelerating"`
 }

@@ -49,7 +49,7 @@ func NewState(net *network.Network, cfg Config) *State {
 		Programs:     make(map[int]*entity.Program),
 		ICEs:         make(map[int]*entity.ICE),
 		Viruses:      make(map[int]*entity.Virus),
-		Resources:    Resources{Data: 100, Compute: 50, Cycles: 0},
+		Resources:    Resources{Data: cfg.InitialData, Compute: cfg.InitialCompute, Cycles: 0},
 		nextEntityID: 1,
 	}
 }
