@@ -15,3 +15,4 @@ github.com/dshlychkou/cyberspace
 task run    # Build and run the game
 task test   # Run tests
 task lint   # Run linter
+task sanity # ALWAYS run this after making changes

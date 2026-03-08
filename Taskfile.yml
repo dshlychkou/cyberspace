@@ -1,6 +1,21 @@
 version: '3'
 
 tasks:
+  update:
+    desc: Tidy Go modules
+    cmds:
+      - go mod tidy
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run static analysis
+    cmds:
+      - go vet ./...
+
   run:
     desc: Build and run the game
     cmds:
@@ -20,3 +35,13 @@ tasks:
     desc: Run linter
     cmds:
       - golangci-lint run ./...
+
+  sanity:
+    desc: Run all checks (fmt, build, test, vet)
+    deps:
+      - update
+      - fmt
+      - vet
+      - lint
+      - test
+      - build

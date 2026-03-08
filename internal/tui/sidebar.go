@@ -13,19 +13,19 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	// Goal
 	sb.WriteString(styleTitle.Render("OBJECTIVE"))
 	sb.WriteByte('\n')
-	sb.WriteString(fmt.Sprintf("Get %d+ ", snap.CoreWinThreshold))
+	fmt.Fprintf(&sb, "Get %d+ ", snap.CoreWinThreshold)
 	sb.WriteString(styleProgram.Render("Programs"))
 	sb.WriteString(" to\n")
 	sb.WriteString(styleCore.Render("★ CORE"))
-	sb.WriteString(fmt.Sprintf(" and hold %d ticks.\n", snap.CoreWinDuration))
+	fmt.Fprintf(&sb, " and hold %d ticks.\n", snap.CoreWinDuration)
 	sb.WriteByte('\n')
 
 	// Resources
 	sb.WriteString(styleTitle.Render("RESOURCES"))
 	sb.WriteByte('\n')
-	sb.WriteString(fmt.Sprintf("Data:    %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Data))))
-	sb.WriteString(fmt.Sprintf("Compute: %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Compute))))
-	sb.WriteString(fmt.Sprintf("Score:   %s\n", styleScore.Render(fmt.Sprintf("%d", snap.Score))))
+	fmt.Fprintf(&sb, "Data:    %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Data)))
+	fmt.Fprintf(&sb, "Compute: %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Compute)))
+	fmt.Fprintf(&sb, "Score:   %s\n", styleScore.Render(fmt.Sprintf("%d", snap.Score)))
 	sb.WriteByte('\n')
 
 	// Controls

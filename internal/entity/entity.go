@@ -1,12 +1,12 @@
 package entity
 
 type Entity struct {
-	ID       int
-	Kind     Kind
-	NodeID   uint64
-	Age      int // ticks alive
-	Alive    bool
-	MaxAge   int // 0 = infinite
+	ID     int
+	Kind   Kind
+	NodeID uint64
+	Age    int // ticks alive
+	Alive  bool
+	MaxAge int // 0 = infinite
 }
 
 func NewEntity(id int, kind Kind, nodeID uint64) *Entity {
