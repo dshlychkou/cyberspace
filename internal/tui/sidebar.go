@@ -31,11 +31,13 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	// Controls
 	sb.WriteString(styleTitle.Render("CONTROLS"))
 	sb.WriteByte('\n')
-	sb.WriteString(styleSelected.Render("↑/↓") + " Select node\n")
+	sb.WriteString(styleSelected.Render("←↑↓→") + " Navigate graph\n")
+	sb.WriteString(styleSelected.Render("Click") + " Select node\n")
 	sb.WriteString(styleSelected.Render("S") + fmt.Sprintf("   Spawn program\n       costs %d Data\n", snap.ProgramSpawnCost))
 	sb.WriteString(styleSelected.Render("V") + fmt.Sprintf("   Deploy virus\n       costs %d Compute\n", snap.VirusDeployCost))
 	sb.WriteString(styleSelected.Render("Spc") + " Pause / Resume\n")
 	sb.WriteString(styleSelected.Render("+/-") + " Speed up / down\n")
+	sb.WriteString(styleSelected.Render("Esc") + " Main menu\n")
 	sb.WriteString(styleSelected.Render("Q") + "   Quit\n")
 	sb.WriteByte('\n')
 

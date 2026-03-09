@@ -64,7 +64,7 @@ func (s *State) spawnScheduledICE() {
 		s.AddICE(uint64(target.ID))
 		s.AddEvent(fmt.Sprintf("New ICE spawned at %s", target.Label))
 	}
-	interval := max(3, 12-s.Tick/10)
+	interval := max(s.Config.ICESpawnMinInterval, s.Config.ICESpawnTick-s.Tick/s.Config.ICESpawnTick)
 	s.sched.Schedule(scheduler.Event{
 		Tick:     s.Tick + interval,
 		Priority: 1,
@@ -83,7 +83,7 @@ func (s *State) escalateICE() {
 	}
 	s.AddEvent("ICE defenses escalating — firewalls and core reinforced!")
 	s.sched.Schedule(scheduler.Event{
-		Tick:     s.Tick + 40,
+		Tick:     s.Tick + s.Config.ICEEscalationRate,
 		Priority: 0,
 		Type:     scheduler.EventICEEscalation,
 	})
@@ -224,7 +224,7 @@ func (s *State) harvestResources() {
 			s.Resources.Data += s.Config.DataHarvestRate
 			s.Score += s.Config.DataHarvestRate
 		case network.NodeRelay:
-			s.Resources.Compute += 2
+			s.Resources.Compute += s.Config.ComputeHarvestRate
 		}
 	}
 }
@@ -292,7 +292,8 @@ func (s *State) checkEndConditions() {
 		s.CoreHoldLen = 0
 	}
 
-	if len(s.Programs) == 0 && s.Tick > 5 {
+	const gracePeriod = 5 // don't end the game during initial setup ticks
+	if len(s.Programs) == 0 && s.Tick > gracePeriod {
 		s.GameOver = true
 		s.Won = false
 		s.AddEvent("All programs destroyed. Game over.")

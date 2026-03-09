@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"time"
 
@@ -33,16 +34,18 @@ type Model struct {
 	settingsIdx int
 	cfg         game.Config
 
-	state       game.StateSnapshot
-	engineRef   *actor.GoActor[*game.State]
-	ctx         context.Context
-	width       int
-	height      int
-	selectedIdx int
-	nodeIDs     []uint64
-	tickRate    time.Duration
-	statusMsg   string
-	metrics     *middleware.Metrics
+	state          game.StateSnapshot
+	engineRef      *actor.GoActor[*game.State]
+	ctx            context.Context
+	width          int
+	height         int
+	selectedNodeID uint64
+	nodeIDs        []uint64
+	nodePositions  []nodePos
+	graphOffset    struct{ x, y int }
+	tickRate       time.Duration
+	statusMsg      string
+	metrics        *middleware.Metrics
 }
 
 type StateProvider struct {
@@ -59,7 +62,7 @@ func NewModel(ctx context.Context, cfg game.Config) *Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m *Model) Init() tea.Cmd {
 	return nil
 }
 
@@ -69,10 +72,14 @@ func doTick(d time.Duration) tea.Cmd {
 	})
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.screen == screenGame && len(m.state.Nodes) > 0 {
+			m.computeNodePositions()
+			m.computeGraphOffset()
+		}
 		return m, nil
 	}
 
@@ -90,7 +97,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -117,7 +124,7 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		return m, tea.Batch(
@@ -133,6 +140,12 @@ func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 		m.nodeIDs = nodeIDs
+		// Validate selectedNodeID still exists; fallback to first node
+		if _, ok := m.state.Nodes[m.selectedNodeID]; !ok && len(nodeIDs) > 0 {
+			m.selectedNodeID = nodeIDs[0]
+		}
+		m.computeNodePositions()
+		m.computeGraphOffset()
 		m.statusMsg = ""
 		return m, nil
 
@@ -140,10 +153,25 @@ func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = string(msg)
 		return m, nil
 
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			mouse := msg.Mouse()
+			if id, ok := m.hitTestNode(mouse.X, mouse.Y); ok {
+				m.selectedNodeID = id
+			}
+		}
+
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+		case "esc":
+			m.stopEngine()
+			m.screen = screenMenu
+			m.state = game.StateSnapshot{}
+			m.selectedNodeID = 0
+			m.nodePositions = nil
+			m.nodeIDs = nil
+			m.statusMsg = ""
+			return m, nil
 
 		case "r":
 			if m.state.GameOver {
@@ -158,24 +186,26 @@ func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.sendTogglePause()
 
 		case "s":
-			if m.selectedIdx < len(m.nodeIDs) {
-				return m, m.sendSpawnProgram(m.nodeIDs[m.selectedIdx])
+			if m.selectedNodeID != 0 {
+				return m, m.sendSpawnProgram(m.selectedNodeID)
 			}
 
 		case "v":
-			if m.selectedIdx < len(m.nodeIDs) {
-				return m, m.sendDeployVirus(m.nodeIDs[m.selectedIdx])
+			if m.selectedNodeID != 0 {
+				return m, m.sendDeployVirus(m.selectedNodeID)
 			}
 
-		case "up", "k":
-			if m.selectedIdx > 0 {
-				m.selectedIdx--
-			}
+		case "up":
+			m.selectedNodeID = m.spatialSelect(0, -1)
 
-		case "down", "j":
-			if m.selectedIdx < len(m.nodeIDs)-1 {
-				m.selectedIdx++
-			}
+		case "down":
+			m.selectedNodeID = m.spatialSelect(0, 1)
+
+		case "left":
+			m.selectedNodeID = m.spatialSelect(-1, 0)
+
+		case "right":
+			m.selectedNodeID = m.spatialSelect(1, 0)
 
 		case "+", "=":
 			if m.tickRate > 100*time.Millisecond {
@@ -192,7 +222,7 @@ func (m Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case "ctrl+c":
@@ -216,7 +246,7 @@ func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case "ctrl+c":
@@ -228,7 +258,7 @@ func (m Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) startGame() (tea.Model, tea.Cmd) {
+func (m *Model) startGame() (tea.Model, tea.Cmd) {
 	gameState := game.InitGame(m.cfg)
 	gameState.Paused = true
 
@@ -266,11 +296,14 @@ func (m Model) startGame() (tea.Model, tea.Cmd) {
 	m.metrics = metrics
 	m.screen = screenGame
 	m.statusMsg = ""
+	if len(nodeIDs) > 0 {
+		m.selectedNodeID = nodeIDs[0]
+	}
 
 	return m, doTick(m.tickRate)
 }
 
-func (m Model) View() tea.View {
+func (m *Model) View() tea.View {
 	if m.width == 0 || m.height == 0 {
 		return tea.NewView("Loading CYBERSPACE...")
 	}
@@ -289,10 +322,13 @@ func (m Model) View() tea.View {
 
 	v := tea.NewView(content)
 	v.AltScreen = true
+	if m.screen == screenGame {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 
-func (m Model) renderGame() string {
+func (m *Model) renderGame() string {
 	if m.width < 60 || m.height < 20 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			styleError.Render("Terminal too small. Need at least 60x20."))
@@ -316,10 +352,10 @@ func (m Model) renderGame() string {
 	if graphHeight < 8 {
 		graphHeight = 8
 	}
-	graph := renderGraph(m.state, m.selectedIdx, m.nodeIDs, innerWidth, graphHeight)
+	graph := renderGraph(m.state, m.selectedNodeID, m.nodePositions, innerWidth, graphHeight)
 
 	// Selected node details
-	details := renderSelectedDetails(m.state, m.selectedIdx, m.nodeIDs)
+	details := renderSelectedDetails(m.state, m.selectedNodeID)
 
 	// Event log
 	eventLog := renderEventLog(m.state.Events, eventHeight)
@@ -352,7 +388,7 @@ func (m Model) renderGame() string {
 	return lipgloss.JoinVertical(lipgloss.Left, body, statusBar)
 }
 
-func (m Model) sendTick() tea.Cmd {
+func (m *Model) sendTick() tea.Cmd {
 	return func() tea.Msg {
 		done := make(chan game.StateSnapshot, 1)
 		cmd := &game.TickCmd{
@@ -372,7 +408,7 @@ func (m Model) sendTick() tea.Cmd {
 	}
 }
 
-func (m Model) sendTogglePause() tea.Cmd {
+func (m *Model) sendTogglePause() tea.Cmd {
 	return func() tea.Msg {
 		cmd := &game.TogglePauseCmd{}
 		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
@@ -382,7 +418,7 @@ func (m Model) sendTogglePause() tea.Cmd {
 	}
 }
 
-func (m Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
+func (m *Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
 	return func() tea.Msg {
 		done := make(chan string, 1)
 		cmd := &game.SpawnProgramCmd{
@@ -410,7 +446,7 @@ func (m Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
 	}
 }
 
-func (m Model) sendDeployVirus(nodeID uint64) tea.Cmd {
+func (m *Model) sendDeployVirus(nodeID uint64) tea.Cmd {
 	return func() tea.Msg {
 		done := make(chan string, 1)
 		cmd := &game.DeployVirusCmd{
@@ -436,6 +472,120 @@ func (m Model) sendDeployVirus(nodeID uint64) tea.Cmd {
 			return errorMsg("deploy timeout")
 		}
 	}
+}
+
+func (m *Model) graphDimensions() (innerWidth, innerHeight, graphWidth, graphHeight int) {
+	sidebarWidth := min(28, m.width/3)
+	mainWidth := m.width - sidebarWidth - 2
+	innerWidth = mainWidth - 4
+	panelHeight := m.height - 2
+	innerHeight = panelHeight - 2
+
+	graphWidth = innerWidth
+	detailHeight := 3
+	eventHeight := 6
+	graphHeight = innerHeight - 1 - detailHeight - eventHeight
+	if graphHeight < 8 {
+		graphHeight = 8
+	}
+	return
+}
+
+func (m *Model) computeNodePositions() {
+	_, _, gw, gh := m.graphDimensions()
+	m.nodePositions = layoutNodes(m.state, gw, gh)
+}
+
+func (m *Model) computeGraphOffset() {
+	// stylePanel: Border(RoundedBorder()) = 1 cell each side, Padding(0, 1) = 1 cell left/right
+	// x offset: border(1) + padding(1) = 2
+	// y offset: border(1) + HUD line(1) = 2
+	m.graphOffset.x = 2
+	m.graphOffset.y = 2
+}
+
+func (m *Model) hitTestNode(termX, termY int) (uint64, bool) {
+	localX := termX - m.graphOffset.x
+	localY := termY - m.graphOffset.y
+
+	_, _, gw, gh := m.graphDimensions()
+	if localX < 0 || localY < 0 || localX >= gw || localY >= gh {
+		return 0, false
+	}
+
+	var bestID uint64
+	bestDist := math.MaxFloat64
+	const maxDist = 4.0
+
+	for _, p := range m.nodePositions {
+		dx := float64(localX-p.x) * 0.5 // weight horizontal by 0.5 for terminal aspect ratio
+		dy := float64(localY - p.y)
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist < bestDist && dist <= maxDist {
+			bestDist = dist
+			bestID = p.id
+		}
+	}
+
+	if bestDist <= maxDist {
+		return bestID, true
+	}
+	return 0, false
+}
+
+func (m *Model) spatialSelect(dirX, dirY int) uint64 {
+	if len(m.nodePositions) == 0 {
+		return m.selectedNodeID
+	}
+
+	// Find current node position
+	var cur nodePos
+	found := false
+	for _, p := range m.nodePositions {
+		if p.id == m.selectedNodeID {
+			cur = p
+			found = true
+			break
+		}
+	}
+	if !found {
+		return m.selectedNodeID
+	}
+
+	bestID := m.selectedNodeID
+	bestScore := math.MaxFloat64
+
+	for _, p := range m.nodePositions {
+		if p.id == m.selectedNodeID {
+			continue
+		}
+
+		dx := float64(p.x - cur.x)
+		dy := float64(p.y - cur.y)
+
+		// Dot product with direction vector — must be positive (same half-plane)
+		dot := dx*float64(dirX) + dy*float64(dirY)
+		if dot <= 0 {
+			continue
+		}
+
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist == 0 {
+			continue
+		}
+
+		// Cross product magnitude for angular penalty
+		cross := math.Abs(dx*float64(dirY) - dy*float64(dirX))
+		angularPenalty := cross / dist * 2.0
+
+		score := dist + angularPenalty*dist
+		if score < bestScore {
+			bestScore = score
+			bestID = p.id
+		}
+	}
+
+	return bestID
 }
 
 func (m *Model) stopEngine() {

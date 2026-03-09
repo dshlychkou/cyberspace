@@ -324,7 +324,7 @@ func (s *State) computeEconomyRates(snap *StateSnapshot) {
 			case network.NodeVault:
 				snap.DataIncome += s.Config.DataHarvestRate
 			case network.NodeRelay:
-				snap.ComputeIncome += 2
+				snap.ComputeIncome += s.Config.ComputeHarvestRate
 			}
 		}
 	}
