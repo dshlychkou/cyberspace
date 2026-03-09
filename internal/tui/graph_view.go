@@ -156,24 +156,22 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-func renderGraph(snap game.StateSnapshot, selectedIdx int, nodeIDs []uint64, w, h int) string {
+func renderGraph(snap game.StateSnapshot, selectedID uint64, positions []nodePos, w, h int) string {
 	if w < 20 || h < 10 {
 		return "Terminal too small"
 	}
 
-	positions := layoutNodes(snap, w, h)
+	// Fall back to computing positions if none provided
+	if len(positions) == 0 {
+		positions = layoutNodes(snap, w, h)
+	}
+
 	posMap := make(map[uint64]nodePos)
 	for _, p := range positions {
 		posMap[p.id] = p
 	}
 
 	c := newCanvas(w, h)
-
-	// Determine selected node ID
-	var selectedID uint64
-	if selectedIdx < len(nodeIDs) {
-		selectedID = nodeIDs[selectedIdx]
-	}
 
 	// Draw edges first
 	for _, e := range snap.Edges {
@@ -310,13 +308,11 @@ func nodeColorByType(t network.NodeType) color.Color {
 	}
 }
 
-func renderSelectedDetails(snap game.StateSnapshot, selectedIdx int, nodeIDs []uint64) string {
-	if selectedIdx >= len(nodeIDs) {
+func renderSelectedDetails(snap game.StateSnapshot, selectedID uint64) string {
+	n, ok := snap.Nodes[selectedID]
+	if !ok {
 		return ""
 	}
-
-	selectedID := nodeIDs[selectedIdx]
-	n := snap.Nodes[selectedID]
 	programs, ices, viruses := countEntities(n, snap)
 
 	sym := network.NodeType(n.Type).Symbol()

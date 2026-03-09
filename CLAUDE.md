@@ -23,7 +23,9 @@ task sanity # ALWAYS run this after making changes
 - **TUI screens**: screenMenu → screenGame / screenSettings / screenAbout (dispatch in app.go)
 - **Game engine deferred**: actor created only when Play is selected (startGame method)
 - **Canvas renderer**: 2D cell grid in canvas.go, radial graph layout in graph_view.go
-- **Economy**: Data (vaults +5/prog/tick), Compute (relays +2/prog/tick), upkeep (-1 Data/prog), core hold (-3 Compute/prog)
+- **Economy**: Data (vaults +5/prog/tick), Compute (relays +2/prog/tick), upkeep (-1 Data/prog), core hold (-2 Compute/prog)
+- **Node selection**: `selectedNodeID uint64` (survives node destruction), spatial arrow nav + mouse click-to-select
+- **Node positions cached in Update**: `nodePositions []nodePos` + `graphOffset` computed on stateMsg/WindowSizeMsg, passed to renderGraph
 
 ## Key Files
 - `cmd/cyberspace/main.go` - entry point, passes Config to tui.NewModel
