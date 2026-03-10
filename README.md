@@ -1,6 +1,8 @@
 # CYBERSPACE
 
-![Main Menu](assets/main_menu.png)
+![Header](assets/header.png)
+---------------------------
+![Play](assets/play.png)
 
 Terminal network strategy game.
 
@@ -10,8 +12,6 @@ Infiltrate a cyberpunk network, deploy programs, hack through ICE defenses, spre
 
 ```bash
 task run
-# or
-go run ./cmd/cyberspace
 ```
 
 ## How to play
@@ -25,15 +25,15 @@ You control **programs** spreading through a network of nodes. Your goal is to g
 
 ### Controls
 
-| Key          | Action                         |
-|--------------|--------------------------------|
-| `←`/`↑`/`↓`/`→` | Navigate graph (spatial)   |
-| `Click`      | Select node                    |
-| `S`          | Spawn program (costs Data)     |
-| `V`          | Deploy virus (costs Compute)   |
-| `Space`      | Pause / Resume                 |
-| `+`/`-`      | Speed up / slow down           |
-| `Q`          | Quit                           |
+| Key             | Action                        |
+|-----------------|-------------------------------|
+| `←`/`↑`/`↓`/`→` | Navigate graph (spatial)      |
+| `Click`         | Select node                   |
+| `S`             | Spawn program (costs Data)    |
+| `V`             | Deploy virus (costs Compute)  |
+| `Space`         | Pause / Resume                |
+| `+`/`-`         | Speed up / slow down          |
+| `Q`             | Quit                          |
 
 ### Economy
 
@@ -46,17 +46,17 @@ You control **programs** spreading through a network of nodes. Your goal is to g
 
 ### Map Symbols
 
-| Symbol | Meaning              |
-|--------|----------------------|
-| `★`    | Core (target)        |
+| Symbol | Meaning                                 |
+|--------|-----------------------------------------|
+| `★`    | Core (target)                           |
 | `◆`    | Firewall / Server / Vault (color-coded) |
-| `◇`    | Relay                |
-| `P`    | Program (yours)      |
-| `I`    | ICE (enemy defense)  |
-| `V`    | Virus (converts ICE) |
-| `$`    | Data flow            |
-| `~`    | Compute flow         |
-| `×`    | ICE threat           |
+| `◇`    | Relay                                   |
+| `P`    | Program (yours)                         |
+| `I`    | ICE (enemy defense)                     |
+| `V`    | Virus (converts ICE)                    |
+| `$`    | Data flow                               |
+| `~`    | Compute flow                            |
+| `×`    | ICE threat                              |
 
 ## Configuration
 
@@ -76,31 +76,29 @@ CYBERSPACE_TICK_RATE=2s CYBERSPACE_INITIAL_ICE=4 go run ./cmd/cyberspace
 
 ### All settings
 
-| Flag | Env var | Default | Description |
-|------|---------|---------|-------------|
-| `--cyberspace_tick_rate` | `CYBERSPACE_TICK_RATE` | `1s` | Game speed (e.g. 500ms, 1s, 2s) |
-| `--cyberspace_initial_programs` | `CYBERSPACE_INITIAL_PROGRAMS` | `3` | Starting program count |
-| `--cyberspace_initial_ice` | `CYBERSPACE_INITIAL_ICE` | `3` | Starting ICE count |
-| `--cyberspace_virus_lifespan` | `CYBERSPACE_VIRUS_LIFESPAN` | `8` | Ticks before a virus decays |
-| `--cyberspace_core_win_threshold` | `CYBERSPACE_CORE_WIN_THRESHOLD` | `4` | Programs needed on CORE to start winning |
-| `--cyberspace_core_win_duration` | `CYBERSPACE_CORE_WIN_DURATION` | `12` | Consecutive ticks holding CORE to win |
-| `--cyberspace_data_harvest_rate` | `CYBERSPACE_DATA_HARVEST_RATE` | `5` | Data earned per tick per program on a Vault |
-| `--cyberspace_program_spawn_cost` | `CYBERSPACE_PROGRAM_SPAWN_COST` | `15` | Data cost to spawn a program |
-| `--cyberspace_virus_deploy_cost` | `CYBERSPACE_VIRUS_DEPLOY_COST` | `20` | Compute cost to deploy a virus |
-| `--cyberspace_program_upkeep` | `CYBERSPACE_PROGRAM_UPKEEP` | `1` | Data cost per program per tick |
-| `--cyberspace_core_hold_cost` | `CYBERSPACE_CORE_HOLD_COST` | `2` | Compute cost per program on CORE per tick |
-| `--cyberspace_survive_min` | `CYBERSPACE_SURVIVE_MIN` | `1` | Min neighbor support for program survival |
-| `--cyberspace_survive_max` | `CYBERSPACE_SURVIVE_MAX` | `6` | Max neighbor support before overcrowding |
-| `--cyberspace_spread_exact` | `CYBERSPACE_SPREAD_EXACT` | `3` | Neighbor programs needed for auto-spread |
-| `--cyberspace_initial_data` | `CYBERSPACE_INITIAL_DATA` | `100` | Starting Data resource |
-| `--cyberspace_initial_compute` | `CYBERSPACE_INITIAL_COMPUTE` | `40` | Starting Compute resource |
-| `--cyberspace_ice_spawn_tick` | `CYBERSPACE_ICE_SPAWN_TICK` | `15` | Tick when first new ICE spawns |
-| `--cyberspace_ice_escalation_tick` | `CYBERSPACE_ICE_ESCALATION_TICK` | `60` | Tick when ICE bursts begin |
+| Flag                               | Env var                          | Default | Description                                    |
+|------------------------------------|----------------------------------|---------|------------------------------------------------|
+| `--cyberspace_tick_rate`           | `CYBERSPACE_TICK_RATE`           | `1s`    | Game speed (e.g. 500ms, 1s, 2s)                |
+| `--cyberspace_initial_programs`    | `CYBERSPACE_INITIAL_PROGRAMS`    | `3`     | Starting program count                         |
+| `--cyberspace_initial_ice`         | `CYBERSPACE_INITIAL_ICE`         | `3`     | Starting ICE count                             |
+| `--cyberspace_virus_lifespan`      | `CYBERSPACE_VIRUS_LIFESPAN`      | `8`     | Ticks before a virus decays                    |
+| `--cyberspace_core_win_threshold`  | `CYBERSPACE_CORE_WIN_THRESHOLD`  | `4`     | Programs needed on CORE to start winning       |
+| `--cyberspace_core_win_duration`   | `CYBERSPACE_CORE_WIN_DURATION`   | `12`    | Consecutive ticks holding CORE to win          |
+| `--cyberspace_data_harvest_rate`   | `CYBERSPACE_DATA_HARVEST_RATE`   | `5`     | Data earned per tick per program on a Vault    |
+| `--cyberspace_program_spawn_cost`  | `CYBERSPACE_PROGRAM_SPAWN_COST`  | `15`    | Data cost to spawn a program                   |
+| `--cyberspace_virus_deploy_cost`   | `CYBERSPACE_VIRUS_DEPLOY_COST`   | `20`    | Compute cost to deploy a virus                 |
+| `--cyberspace_program_upkeep`      | `CYBERSPACE_PROGRAM_UPKEEP`      | `1`     | Data cost per program per tick                 |
+| `--cyberspace_core_hold_cost`      | `CYBERSPACE_CORE_HOLD_COST`      | `2`     | Compute cost per program on CORE per tick      |
+| `--cyberspace_survive_min`         | `CYBERSPACE_SURVIVE_MIN`         | `1`     | Min neighbor support for program survival      |
+| `--cyberspace_survive_max`         | `CYBERSPACE_SURVIVE_MAX`         | `6`     | Max neighbor support before overcrowding       |
+| `--cyberspace_spread_exact`        | `CYBERSPACE_SPREAD_EXACT`        | `3`     | Neighbor programs needed for auto-spread       |
+| `--cyberspace_initial_data`        | `CYBERSPACE_INITIAL_DATA`        | `100`   | Starting Data resource                         |
+| `--cyberspace_initial_compute`     | `CYBERSPACE_INITIAL_COMPUTE`     | `40`    | Starting Compute resource                      |
+| `--cyberspace_ice_spawn_tick`      | `CYBERSPACE_ICE_SPAWN_TICK`      | `15`    | Tick when first new ICE spawns                 |
+| `--cyberspace_ice_escalation_tick` | `CYBERSPACE_ICE_ESCALATION_TICK` | `60`    | Tick when ICE bursts begin                     |
 
 ## Test
 
 ```bash
 task test
-# or
-go test ./...
 ```
