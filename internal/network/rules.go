@@ -83,11 +83,11 @@ func EvaluateRules(net *Network, entities []EntitySnapshot, cfg RuleConfig) Rule
 
 	for _, nodeID := range net.NodeIDs() {
 		nc := ev.contextFor(nodeID)
-		ev.evalProgramSurvival(nc)
-		ev.evalAutoSpread(nc)
-		ev.evalICESuppress(nc)
-		ev.evalICEPatrol(nc)
-		ev.evalVirusCorrupt(nc)
+		ev.evalProgramSurvival(&nc)
+		ev.evalAutoSpread(&nc)
+		ev.evalICESuppress(&nc)
+		ev.evalICEPatrol(&nc)
+		ev.evalVirusCorrupt(&nc)
 	}
 	return ev.result
 }
@@ -128,7 +128,7 @@ func (ev *ruleEvaluator) contextFor(nodeID uint64) nodeContext {
 
 // evalProgramSurvival kills programs that lack neighbor support or are
 // outnumbered by ICE on the same node.
-func (ev *ruleEvaluator) evalProgramSurvival(nc nodeContext) {
+func (ev *ruleEvaluator) evalProgramSurvival(nc *nodeContext) {
 	for _, e := range nc.entities {
 		if e.Kind != entity.KindProgram {
 			continue
@@ -147,7 +147,7 @@ func (ev *ruleEvaluator) evalProgramSurvival(nc nodeContext) {
 // evalAutoSpread spawns a program on empty, non-fortified nodes (server,
 // relay, vault) when enough neighbor programs exist. Firewalls and core
 // require manual placement.
-func (ev *ruleEvaluator) evalAutoSpread(nc nodeContext) {
+func (ev *ruleEvaluator) evalAutoSpread(nc *nodeContext) {
 	if nc.localPrograms != 0 || nc.localICE != 0 {
 		return
 	}
@@ -164,7 +164,7 @@ func (ev *ruleEvaluator) evalAutoSpread(nc nodeContext) {
 
 // evalICESuppress kills all programs on a node where ICE meets or
 // outnumbers them.
-func (ev *ruleEvaluator) evalICESuppress(nc nodeContext) {
+func (ev *ruleEvaluator) evalICESuppress(nc *nodeContext) {
 	if nc.localICE == 0 || nc.localPrograms == 0 || nc.localICE < nc.localPrograms {
 		return
 	}
@@ -177,7 +177,7 @@ func (ev *ruleEvaluator) evalICESuppress(nc nodeContext) {
 
 // evalICEPatrol moves one ICE toward the first undefended neighbor that
 // contains programs.
-func (ev *ruleEvaluator) evalICEPatrol(nc nodeContext) {
+func (ev *ruleEvaluator) evalICEPatrol(nc *nodeContext) {
 	if nc.localICE == 0 || nc.neighborPrograms == 0 {
 		return
 	}
@@ -198,7 +198,7 @@ func (ev *ruleEvaluator) evalICEPatrol(nc nodeContext) {
 
 // evalVirusCorrupt flips one ICE per adjacent node that contains viruses,
 // converting it into a player program.
-func (ev *ruleEvaluator) evalVirusCorrupt(nc nodeContext) {
+func (ev *ruleEvaluator) evalVirusCorrupt(nc *nodeContext) {
 	if nc.localViruses == 0 {
 		return
 	}

@@ -8,13 +8,13 @@ func Generate(rng *rand.Rand) *Network {
 	net := New()
 
 	// Create core (1 node)
-	coreID := 1
+	var coreID uint64 = 1
 	net.AddNode(NewNode(coreID, NodeCore))
 
 	// Create firewalls around core (2-3 nodes)
 	fwCount := 2 + rng.IntN(2)
-	fwIDs := make([]int, fwCount)
-	nextID := 2
+	fwIDs := make([]uint64, fwCount)
+	var nextID uint64 = 2
 	for i := range fwCount {
 		fwIDs[i] = nextID
 		net.AddNode(NewNode(nextID, NodeFirewall))
@@ -24,7 +24,7 @@ func Generate(rng *rand.Rand) *Network {
 
 	// Create servers (3-4 nodes)
 	srvCount := 3 + rng.IntN(2)
-	srvIDs := make([]int, srvCount)
+	srvIDs := make([]uint64, srvCount)
 	for i := range srvCount {
 		srvIDs[i] = nextID
 		net.AddNode(NewNode(nextID, NodeServer))
@@ -36,7 +36,7 @@ func Generate(rng *rand.Rand) *Network {
 
 	// Create relays (2-3 nodes) connecting servers
 	relCount := 2 + rng.IntN(2)
-	relIDs := make([]int, relCount)
+	relIDs := make([]uint64, relCount)
 	for i := range relCount {
 		relIDs[i] = nextID
 		net.AddNode(NewNode(nextID, NodeRelay))
@@ -67,7 +67,7 @@ func Generate(rng *rand.Rand) *Network {
 		a := allIDs[rng.IntN(len(allIDs))]
 		b := allIDs[rng.IntN(len(allIDs))]
 		if a != b {
-			net.Connect(int(a), int(b))
+			net.Connect(a, b)
 		}
 	}
 

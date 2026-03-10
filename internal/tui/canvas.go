@@ -8,6 +8,12 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+const (
+	charDot  = "·"
+	charHBar = "─"
+	charVBar = "│"
+)
+
 type cell struct {
 	ch string
 	fg color.Color
@@ -25,7 +31,7 @@ func newCanvas(w, h int) *canvas {
 		for x := range w {
 			// Subtle grid dots for CRT/matrix vibe
 			if x%4 == 0 && y%2 == 0 {
-				cells[y][x] = cell{ch: "·", fg: colorGridDot}
+				cells[y][x] = cell{ch: charDot, fg: colorGridDot}
 			} else {
 				cells[y][x] = cell{ch: " ", fg: colorBg}
 			}
@@ -77,7 +83,7 @@ func (c *canvas) drawLine(x1, y1, x2, y2 int, fg color.Color) {
 		}
 		// Don't overwrite nodes
 		existing := c.get(x, y)
-		if existing.ch != " " && existing.ch != "·" && existing.ch != "─" && existing.ch != "│" {
+		if existing.ch != " " && existing.ch != charDot && existing.ch != charHBar && existing.ch != charVBar {
 			continue
 		}
 
@@ -91,12 +97,12 @@ func edgeChar(fx, fy float64) string {
 	ay := math.Abs(fy)
 
 	if ay < 0.15 {
-		return "─"
+		return charHBar
 	}
 	if ax < 0.3 {
-		return "│"
+		return charVBar
 	}
-	return "·"
+	return charDot
 }
 
 func (c *canvas) render() string {

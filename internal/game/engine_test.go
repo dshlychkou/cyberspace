@@ -33,7 +33,7 @@ func testConfig() Config {
 
 func TestInitGame(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(cfg)
+	state := InitGame(&cfg)
 
 	if state == nil {
 		t.Fatal("expected non-nil state")
@@ -62,7 +62,7 @@ func TestInitGame(t *testing.T) {
 
 func TestSpawnProgram(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(cfg)
+	state := InitGame(&cfg)
 
 	// Pick a node to spawn on
 	var nodeID uint64
@@ -86,7 +86,7 @@ func TestSpawnProgram(t *testing.T) {
 
 func TestStateSnapshot(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(cfg)
+	state := InitGame(&cfg)
 	snap := state.Snapshot()
 
 	if snap.Tick != 0 {
@@ -129,7 +129,8 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 }
 
 func TestTickCmdViaActor(t *testing.T) {
-	state := InitGame(testConfig())
+	cfg := testConfig()
+	state := InitGame(&cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -151,7 +152,8 @@ func TestTickCmdViaActor(t *testing.T) {
 }
 
 func TestSpawnProgramCmdViaActor(t *testing.T) {
-	state := InitGame(testConfig())
+	cfg := testConfig()
+	state := InitGame(&cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -188,7 +190,8 @@ func TestSpawnProgramCmdViaActor(t *testing.T) {
 }
 
 func TestMultipleTicksViaActor(t *testing.T) {
-	state := InitGame(testConfig())
+	cfg := testConfig()
+	state := InitGame(&cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 

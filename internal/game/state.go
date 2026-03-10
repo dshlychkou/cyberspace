@@ -86,7 +86,7 @@ type VirusSnapshot struct {
 type NodeSnapshot struct {
 	Label    string
 	Entities []int
-	ID       int
+	ID       uint64
 	Type     network.NodeType
 }
 
@@ -95,10 +95,10 @@ type EdgeSnapshot struct {
 	To   uint64
 }
 
-func NewState(net *network.Network, cfg Config) *State {
+func NewState(net *network.Network, cfg *Config) *State {
 	return &State{
 		Network:      net,
-		Config:       cfg,
+		Config:       *cfg,
 		Programs:     make(map[int]*entity.Program),
 		ICEs:         make(map[int]*entity.ICE),
 		Viruses:      make(map[int]*entity.Virus),

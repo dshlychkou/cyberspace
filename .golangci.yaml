@@ -59,6 +59,9 @@ linters:
       min-complexity: 15
     lll:
       line-length: 140
+    gosec:
+      excludes:
+        - G404 # math/rand is correct for game simulation (seeded from crypto/rand)
     misspell:
       locale: US
     staticcheck:

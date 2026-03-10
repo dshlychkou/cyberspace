@@ -5,10 +5,11 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
-func renderHUD(snap game.StateSnapshot, width int) string {
+func renderHUD(snap *game.StateSnapshot, width int) string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(colorNeonPurple).Render("CYBERSPACE")
 
 	tickStr := styleHUD.Render(fmt.Sprintf("Tick:%d", snap.Tick))

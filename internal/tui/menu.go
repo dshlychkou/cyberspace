@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
@@ -157,7 +158,7 @@ func renderMenu(idx, width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, menu)
 }
 
-func renderSettings(cfg game.Config, selectedIdx, width, height int) string {
+func renderSettings(cfg *game.Config, selectedIdx, width, height int) string {
 	title := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(colorNeonPurple).
@@ -173,7 +174,7 @@ func renderSettings(cfg game.Config, selectedIdx, width, height int) string {
 
 	var rows []string
 	for i, item := range settingsItems {
-		val := item.Format(cfg)
+		val := item.Format(*cfg)
 		if i == selectedIdx {
 			rows = append(rows,
 				cursorStyle.Render("> ")+selectedLabel.Render(item.Label)+arrowStyle.Render("< ")+selectedValue.Render(val)+arrowStyle.Render(" >"),

@@ -2,6 +2,12 @@ package network
 
 import "fmt"
 
+const (
+	symbolFilledDiamond = "\u25c6" // ◆
+	symbolHollowDiamond = "\u25c7" // ◇
+	symbolStar          = "\u2605" // ★
+)
+
 type NodeType int
 
 const (
@@ -32,28 +38,28 @@ func (t NodeType) String() string {
 func (t NodeType) Symbol() string {
 	switch t {
 	case NodeServer:
-		return "\u25c6" // filled diamond
+		return symbolFilledDiamond
 	case NodeVault:
-		return "\u25c6" // filled diamond
+		return symbolFilledDiamond
 	case NodeRelay:
-		return "\u25c7" // hollow diamond
+		return symbolHollowDiamond
 	case NodeFirewall:
-		return "\u25c6" // filled diamond
+		return symbolFilledDiamond
 	case NodeCore:
-		return "\u2605" // star
+		return symbolStar
 	default:
 		return "?"
 	}
 }
 
 type Node struct {
-	ID       int
+	ID       uint64
 	Type     NodeType
 	Label    string
 	Entities []int // entity IDs present on this node
 }
 
-func NewNode(id int, nodeType NodeType) *Node {
+func NewNode(id uint64, nodeType NodeType) *Node {
 	return &Node{
 		ID:       id,
 		Type:     nodeType,
