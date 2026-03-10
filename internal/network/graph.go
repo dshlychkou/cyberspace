@@ -21,14 +21,14 @@ func New() *Network {
 }
 
 func (n *Network) AddNode(node *Node) {
-	gn := dag.GroupNode{ID: uint64(node.ID), Group: GroupName}
+	gn := dag.GroupNode{ID: node.ID, Group: GroupName}
 	_ = n.Graph.AddNode(gn)
-	n.Nodes[uint64(node.ID)] = node
+	n.Nodes[node.ID] = node
 }
 
-func (n *Network) Connect(fromID, toID int) {
-	from := dag.GroupNode{ID: uint64(fromID), Group: GroupName}
-	to := dag.GroupNode{ID: uint64(toID), Group: GroupName}
+func (n *Network) Connect(fromID, toID uint64) {
+	from := dag.GroupNode{ID: fromID, Group: GroupName}
+	to := dag.GroupNode{ID: toID, Group: GroupName}
 	_ = n.Graph.AddEdge(from, to)
 	_ = n.Graph.AddEdge(to, from) // undirected
 }

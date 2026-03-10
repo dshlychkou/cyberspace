@@ -16,7 +16,7 @@ type nodePos struct {
 	id   uint64
 }
 
-func layoutNodes(snap game.StateSnapshot, w, h int) []nodePos {
+func layoutNodes(snap *game.StateSnapshot, w, h int) []nodePos {
 	cx := w / 2
 	cy := h / 2
 
@@ -75,7 +75,7 @@ func layoutNodes(snap game.StateSnapshot, w, h int) []nodePos {
 	return positions
 }
 
-func ringLayout(ids []uint64, cx, cy int, radius float64, startAngle float64, w, h int) []nodePos {
+func ringLayout(ids []uint64, cx, cy int, radius, startAngle float64, w, h int) []nodePos {
 	n := len(ids)
 	if n == 0 {
 		return nil
@@ -156,7 +156,7 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-func renderGraph(snap game.StateSnapshot, selectedID uint64, positions []nodePos, w, h int) string {
+func renderGraph(snap *game.StateSnapshot, selectedID uint64, positions []nodePos, w, h int) string {
 	if w < 20 || h < 10 {
 		return "Terminal too small"
 	}
@@ -207,21 +207,10 @@ func renderGraph(snap game.StateSnapshot, selectedID uint64, positions []nodePos
 }
 
 func drawNode(c *canvas, x, y int, n game.NodeSnapshot, programs, ices, viruses int, selected bool) {
-	sym := network.NodeType(n.Type).Symbol()
+	sym := n.Type.Symbol()
 	label := shortLabel(n)
 
-	// Node color by type
-	nodeColor := nodeColorByType(n.Type)
-
-	// If selected, use bright cyan
-	if selected {
-		nodeColor = colorNeonCyan
-	}
-
-	// Override color if contested (has both programs and ICE)
-	if programs > 0 && ices > 0 {
-		nodeColor = colorNeonYellow
-	}
+	nodeColor := resolveNodeColor(n.Type, selected, programs, ices)
 
 	// Draw node symbol and label, clamped to canvas bounds
 	nodeText := sym + label
@@ -229,17 +218,27 @@ func drawNode(c *canvas, x, y int, n game.NodeSnapshot, programs, ices, viruses 
 		nodeText = "[" + nodeText + "]"
 	}
 	textLen := len([]rune(nodeText))
-	textX := clampInt(x-textLen/2, 0, c.w-textLen)
-	if textX < 0 {
-		textX = 0
-	}
+	textX := max(clampInt(x-textLen/2, 0, c.w-textLen), 0)
 	c.drawText(textX, y, nodeText, nodeColor)
 
 	// Draw entity indicators below (skip if would overlap legend area at h-2)
-	if y+1 >= c.h-2 {
-		return
+	if y+1 < c.h-2 {
+		drawEntityTags(c, x, y+1, programs, ices, viruses)
 	}
+}
 
+func resolveNodeColor(t network.NodeType, selected bool, programs, ices int) color.Color {
+	nodeColor := nodeColorByType(t)
+	if selected {
+		nodeColor = colorNeonCyan
+	}
+	if programs > 0 && ices > 0 {
+		nodeColor = colorNeonYellow
+	}
+	return nodeColor
+}
+
+func drawEntityTags(c *canvas, x, y, programs, ices, viruses int) {
 	var tags []string
 	if programs > 0 {
 		tags = append(tags, fmt.Sprintf("%dP", programs))
@@ -250,28 +249,28 @@ func drawNode(c *canvas, x, y int, n game.NodeSnapshot, programs, ices, viruses 
 	if viruses > 0 {
 		tags = append(tags, fmt.Sprintf("%dV", viruses))
 	}
-
-	if len(tags) > 0 {
-		tagStr := strings.Join(tags, " ")
-		tagX := clampInt(x-len(tagStr)/2, 0, c.w-len(tagStr))
-		if tagX < 0 {
-			tagX = 0
-		}
-		// Draw each tag with its own color
-		offset := tagX
-		for i, tag := range tags {
-			var tagColor color.Color
-			if i == 0 && programs > 0 {
-				tagColor = colorNeonGreen
-			} else if (i == 0 && ices > 0) || (i == 1 && programs > 0 && ices > 0) {
-				tagColor = colorNeonRed
-			} else {
-				tagColor = colorNeonMagenta
-			}
-			c.drawText(offset, y+1, tag, tagColor)
-			offset += len(tag) + 1
-		}
+	if len(tags) == 0 {
+		return
 	}
+
+	tagStr := strings.Join(tags, " ")
+	tagX := max(clampInt(x-len(tagStr)/2, 0, c.w-len(tagStr)), 0)
+	offset := tagX
+	for i, tag := range tags {
+		tagColor := tagColorForIndex(i, programs, ices)
+		c.drawText(offset, y, tag, tagColor)
+		offset += len(tag) + 1
+	}
+}
+
+func tagColorForIndex(i, programs, ices int) color.Color {
+	if i == 0 && programs > 0 {
+		return colorNeonGreen
+	}
+	if (i == 0 && ices > 0) || (i == 1 && programs > 0 && ices > 0) {
+		return colorNeonRed
+	}
+	return colorNeonMagenta
 }
 
 func shortLabel(n game.NodeSnapshot) string {
@@ -308,14 +307,14 @@ func nodeColorByType(t network.NodeType) color.Color {
 	}
 }
 
-func renderSelectedDetails(snap game.StateSnapshot, selectedID uint64) string {
+func renderSelectedDetails(snap *game.StateSnapshot, selectedID uint64) string {
 	n, ok := snap.Nodes[selectedID]
 	if !ok {
 		return ""
 	}
 	programs, ices, viruses := countEntities(n, snap)
 
-	sym := network.NodeType(n.Type).Symbol()
+	sym := n.Type.Symbol()
 
 	// Header
 	header := styleTitle.Render("NODE: " + sym + " " + n.Label)
@@ -351,7 +350,7 @@ func renderSelectedDetails(snap game.StateSnapshot, selectedID uint64) string {
 	return info
 }
 
-func nodeHint(n game.NodeSnapshot, programs, ices int, snap game.StateSnapshot) string {
+func nodeHint(n game.NodeSnapshot, programs, ices int, snap *game.StateSnapshot) string {
 	switch n.Type {
 	case network.NodeFirewall:
 		if ices > 0 && programs == 0 {
@@ -398,7 +397,7 @@ type edgeFlow struct {
 	pulses   int // number of pulses on this edge
 }
 
-func drawFlows(c *canvas, snap game.StateSnapshot, posMap map[uint64]nodePos) {
+func drawFlows(c *canvas, snap *game.StateSnapshot, posMap map[uint64]nodePos) {
 	flows := collectFlows(snap, posMap)
 	tick := snap.Tick
 
@@ -414,82 +413,91 @@ func drawFlows(c *canvas, snap game.StateSnapshot, posMap map[uint64]nodePos) {
 			// Only draw on edge chars or empty space, don't clobber nodes
 			existing := c.get(px, py)
 			switch existing.ch {
-			case " ", "·", "─", "│":
+			case " ", charDot, charHBar, charVBar:
 				c.set(px, py, f.symbol, f.fg)
 			}
 		}
 	}
 }
 
-func collectFlows(snap game.StateSnapshot, posMap map[uint64]nodePos) []edgeFlow {
-	// Build per-node entity counts
-	nodeProg := make(map[uint64]int)
-	nodeICE := make(map[uint64]int)
-	nodeVirus := make(map[uint64]int)
-	for _, p := range snap.Programs {
-		nodeProg[p.NodeID]++
-	}
-	for _, ice := range snap.ICEs {
-		nodeICE[ice.NodeID]++
-	}
-	for _, v := range snap.Viruses {
-		nodeVirus[v.NodeID]++
-	}
+type flowCounts struct {
+	prog  map[uint64]int
+	ice   map[uint64]int
+	virus map[uint64]int
+}
 
+func collectFlows(snap *game.StateSnapshot, posMap map[uint64]nodePos) []edgeFlow {
+	fc := buildFlowCounts(snap)
 	var flows []edgeFlow
-
 	for _, e := range snap.Edges {
 		fromPos, ok1 := posMap[e.From]
 		toPos, ok2 := posMap[e.To]
 		if !ok1 || !ok2 {
 			continue
 		}
-
-		fromNode := snap.Nodes[e.From]
-		toNode := snap.Nodes[e.To]
-
-		// Data harvest: vault with programs → $ flowing outward
-		if fromNode.Type == network.NodeVault && nodeProg[e.From] > 0 {
-			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
-		}
-		if toNode.Type == network.NodeVault && nodeProg[e.To] > 0 {
-			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
-		}
-
-		// Compute harvest: relay with programs → ~ flowing outward
-		if fromNode.Type == network.NodeRelay && nodeProg[e.From] > 0 {
-			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
-		}
-		if toNode.Type == network.NodeRelay && nodeProg[e.To] > 0 {
-			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
-		}
-
-		// ICE threat: node with ICE → × pulsing outward (fast, urgent)
-		if nodeICE[e.From] > 0 {
-			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
-		}
-		if nodeICE[e.To] > 0 {
-			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
-		}
-
-		// Virus corruption: node with virus → ◈ flowing to neighbors
-		if nodeVirus[e.From] > 0 {
-			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
-		}
-		if nodeVirus[e.To] > 0 {
-			flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
-		}
-
-		// Program network: both ends have programs → subtle activity
-		if nodeProg[e.From] > 0 && nodeProg[e.To] > 0 {
-			flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorDim, symbol: "•", period: 10, pulses: 1})
-		}
+		flows = edgeFlows(flows, snap.Nodes[e.From], snap.Nodes[e.To], e.From, e.To, fromPos, toPos, &fc)
 	}
-
 	return flows
 }
 
-func findNeighbors(nodeID uint64, snap game.StateSnapshot) []string {
+func buildFlowCounts(snap *game.StateSnapshot) flowCounts {
+	fc := flowCounts{
+		prog:  make(map[uint64]int),
+		ice:   make(map[uint64]int),
+		virus: make(map[uint64]int),
+	}
+	for _, p := range snap.Programs {
+		fc.prog[p.NodeID]++
+	}
+	for _, ice := range snap.ICEs {
+		fc.ice[ice.NodeID]++
+	}
+	for _, v := range snap.Viruses {
+		fc.virus[v.NodeID]++
+	}
+	return fc
+}
+
+func edgeFlows(
+	flows []edgeFlow, fromNode, toNode game.NodeSnapshot,
+	fromID, toID uint64, fromPos, toPos nodePos, fc *flowCounts,
+) []edgeFlow {
+	// Data harvest: vault with programs → $ flowing outward
+	if fromNode.Type == network.NodeVault && fc.prog[fromID] > 0 {
+		flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
+	}
+	if toNode.Type == network.NodeVault && fc.prog[toID] > 0 {
+		flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonCyan, symbol: "$", period: 8, pulses: 2})
+	}
+	// Compute harvest: relay with programs → ~ flowing outward
+	if fromNode.Type == network.NodeRelay && fc.prog[fromID] > 0 {
+		flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
+	}
+	if toNode.Type == network.NodeRelay && fc.prog[toID] > 0 {
+		flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonGreen, symbol: "~", period: 7, pulses: 2})
+	}
+	// ICE threat
+	if fc.ice[fromID] > 0 {
+		flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
+	}
+	if fc.ice[toID] > 0 {
+		flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonRed, symbol: "×", period: 5, pulses: 1})
+	}
+	// Virus corruption
+	if fc.virus[fromID] > 0 {
+		flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
+	}
+	if fc.virus[toID] > 0 {
+		flows = append(flows, edgeFlow{from: toPos, to: fromPos, fg: colorNeonMagenta, symbol: "◈", period: 6, pulses: 1})
+	}
+	// Program network activity
+	if fc.prog[fromID] > 0 && fc.prog[toID] > 0 {
+		flows = append(flows, edgeFlow{from: fromPos, to: toPos, fg: colorDim, symbol: "•", period: 10, pulses: 1})
+	}
+	return flows
+}
+
+func findNeighbors(nodeID uint64, snap *game.StateSnapshot) []string {
 	adj := make(map[uint64]bool)
 	for _, e := range snap.Edges {
 		if e.From == nodeID {

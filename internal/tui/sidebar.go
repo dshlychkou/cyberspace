@@ -7,28 +7,39 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
-func renderSidebar(snap game.StateSnapshot, width int) string {
+func renderSidebar(snap *game.StateSnapshot, _ int) string {
 	var sb strings.Builder
+	sidebarObjective(&sb, snap)
+	sidebarResources(&sb, snap)
+	sidebarControls(&sb, snap)
+	sidebarNodeTypes(&sb)
+	sidebarEntities(&sb)
+	sidebarRules(&sb)
+	sidebarEconomy(&sb)
+	return sb.String()
+}
 
-	// Goal
+func sidebarObjective(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleTitle.Render("OBJECTIVE"))
 	sb.WriteByte('\n')
-	fmt.Fprintf(&sb, "Get %d+ ", snap.CoreWinThreshold)
+	fmt.Fprintf(sb, "Get %d+ ", snap.CoreWinThreshold)
 	sb.WriteString(styleProgram.Render("Programs"))
 	sb.WriteString(" to\n")
 	sb.WriteString(styleCore.Render("★ CORE"))
-	fmt.Fprintf(&sb, " and hold %d ticks.\n", snap.CoreWinDuration)
+	fmt.Fprintf(sb, " and hold %d ticks.\n", snap.CoreWinDuration)
 	sb.WriteByte('\n')
+}
 
-	// Resources
+func sidebarResources(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleTitle.Render("RESOURCES"))
 	sb.WriteByte('\n')
-	fmt.Fprintf(&sb, "Data:    %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Data)))
-	fmt.Fprintf(&sb, "Compute: %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Compute)))
-	fmt.Fprintf(&sb, "Score:   %s\n", styleScore.Render(fmt.Sprintf("%d", snap.Score)))
+	fmt.Fprintf(sb, "Data:    %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Data)))
+	fmt.Fprintf(sb, "Compute: %s\n", styleData.Render(fmt.Sprintf("%d", snap.Resources.Compute)))
+	fmt.Fprintf(sb, "Score:   %s\n", styleScore.Render(fmt.Sprintf("%d", snap.Score)))
 	sb.WriteByte('\n')
+}
 
-	// Controls
+func sidebarControls(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleTitle.Render("CONTROLS"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleSelected.Render("←↑↓→") + " Navigate graph\n")
@@ -40,8 +51,9 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	sb.WriteString(styleSelected.Render("Esc") + " Main menu\n")
 	sb.WriteString(styleSelected.Render("Q") + "   Quit\n")
 	sb.WriteByte('\n')
+}
 
-	// Node types
+func sidebarNodeTypes(sb *strings.Builder) {
 	sb.WriteString(styleTitle.Render("NODES"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleProgram.Render("◆S"))
@@ -55,8 +67,9 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	sb.WriteString(styleCore.Render("★C"))
 	sb.WriteString("ORE Target, hold to win\n")
 	sb.WriteByte('\n')
+}
 
-	// Entities
+func sidebarEntities(sb *strings.Builder) {
 	sb.WriteString(styleTitle.Render("ENTITIES"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleProgram.Render("P"))
@@ -66,8 +79,9 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	sb.WriteString(styleVirus.Render("V"))
 	sb.WriteString(" Virus (converts ICE)\n")
 	sb.WriteByte('\n')
+}
 
-	// Rules
+func sidebarRules(sb *strings.Builder) {
 	sb.WriteString(styleTitle.Render("RULES"))
 	sb.WriteByte('\n')
 	sb.WriteString("Auto-spread: 3+ neighbor\n")
@@ -78,8 +92,9 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	sb.WriteString("ICE>=prog → prog dies.\n")
 	sb.WriteString("Virus flips nearby ICE.\n")
 	sb.WriteByte('\n')
+}
 
-	// Economy
+func sidebarEconomy(sb *strings.Builder) {
 	sb.WriteString(styleTitle.Render("ECONOMY"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleScore.Render("+"))
@@ -91,11 +106,9 @@ func renderSidebar(snap game.StateSnapshot, width int) string {
 	sb.WriteString(styleError.Render("-"))
 	sb.WriteString(" CORE:   -3 Compute/prog\n")
 	sb.WriteString(styleEvent.Render("Bankrupt = death!\n"))
-
-	return sb.String()
 }
 
-func countEntities(n game.NodeSnapshot, snap game.StateSnapshot) (programs, ices, viruses int) {
+func countEntities(n game.NodeSnapshot, snap *game.StateSnapshot) (programs, ices, viruses int) {
 	for _, eid := range n.Entities {
 		for _, p := range snap.Programs {
 			if p.ID == eid {

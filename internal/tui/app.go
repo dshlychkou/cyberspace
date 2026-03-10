@@ -10,8 +10,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/barnowlsnest/go-actorlib/v4/pkg/actor"
 	"github.com/barnowlsnest/go-actorlib/v4/pkg/middleware"
+
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
@@ -22,6 +24,15 @@ const (
 	screenGame
 	screenSettings
 	screenAbout
+)
+
+const (
+	keyCtrlC = "ctrl+c"
+	keyUp    = "up"
+	keyDown  = "down"
+	keyLeft  = "left"
+	keyRight = "right"
+	keyEsc   = "esc"
 )
 
 type stateMsg game.StateSnapshot
@@ -54,10 +65,10 @@ type StateProvider struct {
 
 func (p *StateProvider) Provide() *game.State { return p.State }
 
-func NewModel(ctx context.Context, cfg game.Config) *Model {
+func NewModel(ctx context.Context, cfg *game.Config) *Model {
 	return &Model{
 		screen: screenMenu,
-		cfg:    cfg,
+		cfg:    *cfg,
 		ctx:    ctx,
 	}
 }
@@ -100,13 +111,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", keyCtrlC:
 			return m, tea.Quit
-		case "up", "k":
+		case keyUp, "k":
 			if m.menuIdx > 0 {
 				m.menuIdx--
 			}
-		case "down", "j":
+		case keyDown, "j":
 			if m.menuIdx < 2 {
 				m.menuIdx++
 			}
@@ -162,84 +173,103 @@ func (m *Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "esc":
-			m.stopEngine()
-			m.screen = screenMenu
-			m.state = game.StateSnapshot{}
-			m.selectedNodeID = 0
-			m.nodePositions = nil
-			m.nodeIDs = nil
-			m.statusMsg = ""
-			return m, nil
-
-		case "r":
-			if m.state.GameOver {
-				if m.engineRef != nil {
-					_ = m.engineRef.Stop(5 * time.Second)
-					m.engineRef = nil
-				}
-				return m.startGame()
-			}
-
-		case "space":
-			return m, m.sendTogglePause()
-
-		case "s":
-			if m.selectedNodeID != 0 {
-				return m, m.sendSpawnProgram(m.selectedNodeID)
-			}
-
-		case "v":
-			if m.selectedNodeID != 0 {
-				return m, m.sendDeployVirus(m.selectedNodeID)
-			}
-
-		case "up":
-			m.selectedNodeID = m.spatialSelect(0, -1)
-
-		case "down":
-			m.selectedNodeID = m.spatialSelect(0, 1)
-
-		case "left":
-			m.selectedNodeID = m.spatialSelect(-1, 0)
-
-		case "right":
-			m.selectedNodeID = m.spatialSelect(1, 0)
-
-		case "+", "=":
-			if m.tickRate > 100*time.Millisecond {
-				m.tickRate -= 100 * time.Millisecond
-			}
-
-		case "-":
-			if m.tickRate < 2*time.Second {
-				m.tickRate += 100 * time.Millisecond
-			}
-		}
+		return m.handleGameKey(msg)
 	}
 
 	return m, nil
 }
 
+var arrowDirs = map[string]struct{ dx, dy int }{
+	keyUp:    {0, -1},
+	keyDown:  {0, 1},
+	keyLeft:  {-1, 0},
+	keyRight: {1, 0},
+}
+
+func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	if dir, ok := arrowDirs[key]; ok {
+		m.selectedNodeID = m.spatialSelect(dir.dx, dir.dy)
+		return m, nil
+	}
+
+	switch key {
+	case keyEsc:
+		return m.exitToMenu()
+	case "r":
+		return m.handleRestart()
+	case "space":
+		cmd := m.sendTogglePause()
+		return m, cmd
+	case "s":
+		if m.selectedNodeID != 0 {
+			cmd := m.sendSpawnProgram(m.selectedNodeID)
+			return m, cmd
+		}
+	case "v":
+		if m.selectedNodeID != 0 {
+			cmd := m.sendDeployVirus(m.selectedNodeID)
+			return m, cmd
+		}
+	case "+", "=":
+		m.adjustSpeed(-100 * time.Millisecond)
+	case "-":
+		m.adjustSpeed(100 * time.Millisecond)
+	}
+	return m, nil
+}
+
+func (m *Model) exitToMenu() (tea.Model, tea.Cmd) {
+	m.stopEngine()
+	m.screen = screenMenu
+	m.state = game.StateSnapshot{}
+	m.selectedNodeID = 0
+	m.nodePositions = nil
+	m.nodeIDs = nil
+	m.statusMsg = ""
+	return m, nil
+}
+
+func (m *Model) handleRestart() (tea.Model, tea.Cmd) {
+	if m.state.GameOver {
+		if m.engineRef != nil {
+			_ = m.engineRef.Stop(5 * time.Second)
+			m.engineRef = nil
+		}
+		return m.startGame()
+	}
+	return m, nil
+}
+
+func (m *Model) adjustSpeed(delta time.Duration) {
+	m.tickRate += delta
+	if m.tickRate < 100*time.Millisecond {
+		m.tickRate = 100 * time.Millisecond
+	}
+	if m.tickRate > 2*time.Second {
+		m.tickRate = 2 * time.Second
+	}
+}
+
 func (m *Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
-		case "ctrl+c":
+		case keyCtrlC:
 			return m, tea.Quit
-		case "esc":
+		case keyEsc:
 			m.screen = screenMenu
-		case "up", "k":
+		case keyUp, "k":
 			if m.settingsIdx > 0 {
 				m.settingsIdx--
 			}
-		case "down", "j":
+		case keyDown, "j":
 			if m.settingsIdx < len(settingsItems)-1 {
 				m.settingsIdx++
 			}
-		case "left", "h":
+		case keyLeft, "h":
 			settingsItems[m.settingsIdx].Dec(&m.cfg)
-		case "right", "l":
+		case keyRight, "l":
 			settingsItems[m.settingsIdx].Inc(&m.cfg)
 		}
 	}
@@ -249,9 +279,9 @@ func (m *Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
-		case "ctrl+c":
+		case keyCtrlC:
 			return m, tea.Quit
-		case "esc":
+		case keyEsc:
 			m.screen = screenMenu
 		}
 	}
@@ -259,7 +289,7 @@ func (m *Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) startGame() (tea.Model, tea.Cmd) {
-	gameState := game.InitGame(m.cfg)
+	gameState := game.InitGame(&m.cfg)
 	gameState.Paused = true
 
 	metrics := &middleware.Metrics{}
@@ -315,7 +345,7 @@ func (m *Model) View() tea.View {
 	case screenGame:
 		content = m.renderGame()
 	case screenSettings:
-		content = renderSettings(m.cfg, m.settingsIdx, m.width, m.height)
+		content = renderSettings(&m.cfg, m.settingsIdx, m.width, m.height)
 	case screenAbout:
 		content = renderAbout(m.width, m.height)
 	}
@@ -343,7 +373,7 @@ func (m *Model) renderGame() string {
 	innerHeight := panelHeight - 2
 
 	// HUD
-	hud := renderHUD(m.state, innerWidth)
+	hud := renderHUD(&m.state, innerWidth)
 
 	// Vertical budget: HUD(1) + graph + details(3) + eventlog(eventHeight)
 	detailHeight := 3
@@ -352,16 +382,16 @@ func (m *Model) renderGame() string {
 	if graphHeight < 8 {
 		graphHeight = 8
 	}
-	graph := renderGraph(m.state, m.selectedNodeID, m.nodePositions, innerWidth, graphHeight)
+	graph := renderGraph(&m.state, m.selectedNodeID, m.nodePositions, innerWidth, graphHeight)
 
 	// Selected node details
-	details := renderSelectedDetails(m.state, m.selectedNodeID)
+	details := renderSelectedDetails(&m.state, m.selectedNodeID)
 
 	// Event log
 	eventLog := renderEventLog(m.state.Events, eventHeight)
 
 	// Sidebar (guide) — constrain to panel inner height
-	sidebar := renderSidebar(m.state, sidebarWidth-4)
+	sidebar := renderSidebar(&m.state, sidebarWidth-4)
 
 	// Compose left panel with explicit height to match terminal
 	leftPanel := stylePanel.Width(mainWidth).Height(innerHeight).Render(
@@ -418,21 +448,30 @@ func (m *Model) sendTogglePause() tea.Cmd {
 	}
 }
 
-func (m *Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
+type completionCmd interface {
+	actor.Executable[*game.State]
+}
+
+func newCompletionCmd(nodeID uint64, done chan string, spawn bool) completionCmd {
+	onComplete := func(ok bool, msg string) {
+		if !ok {
+			done <- msg
+		} else {
+			done <- ""
+		}
+	}
+	if spawn {
+		return &game.SpawnProgramCmd{NodeID: nodeID, OnComplete: onComplete}
+	}
+	return &game.DeployVirusCmd{NodeID: nodeID, OnComplete: onComplete}
+}
+
+func (m *Model) sendEntityCmd(nodeID uint64, spawn bool, errPrefix string) tea.Cmd {
 	return func() tea.Msg {
 		done := make(chan string, 1)
-		cmd := &game.SpawnProgramCmd{
-			NodeID: nodeID,
-			OnComplete: func(ok bool, msg string) {
-				if !ok {
-					done <- msg
-				} else {
-					done <- ""
-				}
-			},
-		}
+		cmd := newCompletionCmd(nodeID, done, spawn)
 		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
-			return errorMsg(fmt.Sprintf("spawn error: %v", err))
+			return errorMsg(fmt.Sprintf("%s error: %v", errPrefix, err))
 		}
 		select {
 		case msg := <-done:
@@ -441,45 +480,25 @@ func (m *Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
 			}
 			return nil
 		case <-time.After(5 * time.Second):
-			return errorMsg("spawn timeout")
+			return errorMsg(errPrefix + " timeout")
 		}
 	}
+}
+
+func (m *Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
+	return m.sendEntityCmd(nodeID, true, "spawn")
 }
 
 func (m *Model) sendDeployVirus(nodeID uint64) tea.Cmd {
-	return func() tea.Msg {
-		done := make(chan string, 1)
-		cmd := &game.DeployVirusCmd{
-			NodeID: nodeID,
-			OnComplete: func(ok bool, msg string) {
-				if !ok {
-					done <- msg
-				} else {
-					done <- ""
-				}
-			},
-		}
-		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
-			return errorMsg(fmt.Sprintf("virus error: %v", err))
-		}
-		select {
-		case msg := <-done:
-			if msg != "" {
-				return errorMsg(msg)
-			}
-			return nil
-		case <-time.After(5 * time.Second):
-			return errorMsg("deploy timeout")
-		}
-	}
+	return m.sendEntityCmd(nodeID, false, "deploy")
 }
 
-func (m *Model) graphDimensions() (innerWidth, innerHeight, graphWidth, graphHeight int) {
+func (m *Model) graphDimensions() (graphWidth, graphHeight int) {
 	sidebarWidth := min(28, m.width/3)
 	mainWidth := m.width - sidebarWidth - 2
-	innerWidth = mainWidth - 4
+	innerWidth := mainWidth - 4
 	panelHeight := m.height - 2
-	innerHeight = panelHeight - 2
+	innerHeight := panelHeight - 2
 
 	graphWidth = innerWidth
 	detailHeight := 3
@@ -492,8 +511,8 @@ func (m *Model) graphDimensions() (innerWidth, innerHeight, graphWidth, graphHei
 }
 
 func (m *Model) computeNodePositions() {
-	_, _, gw, gh := m.graphDimensions()
-	m.nodePositions = layoutNodes(m.state, gw, gh)
+	gw, gh := m.graphDimensions()
+	m.nodePositions = layoutNodes(&m.state, gw, gh)
 }
 
 func (m *Model) computeGraphOffset() {
@@ -508,7 +527,7 @@ func (m *Model) hitTestNode(termX, termY int) (uint64, bool) {
 	localX := termX - m.graphOffset.x
 	localY := termY - m.graphOffset.y
 
-	_, _, gw, gh := m.graphDimensions()
+	gw, gh := m.graphDimensions()
 	if localX < 0 || localY < 0 || localX >= gw || localY >= gh {
 		return 0, false
 	}

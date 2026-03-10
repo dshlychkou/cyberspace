@@ -35,7 +35,7 @@ func TestProgramSurvival(t *testing.T) {
 
 func TestProgramSpread(t *testing.T) {
 	net := New()
-	for i := 1; i <= 4; i++ {
+	for i := uint64(1); i <= 4; i++ {
 		net.AddNode(NewNode(i, NodeServer))
 	}
 	net.Connect(4, 1)

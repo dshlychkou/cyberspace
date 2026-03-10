@@ -2,6 +2,8 @@ package game
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math/rand/v2"
 
@@ -61,7 +63,7 @@ func (s *State) spawnScheduledICE() {
 	candidates = append(candidates, s.Network.NodesByType(network.NodeServer)...)
 	if len(candidates) > 0 {
 		target := candidates[s.rng.IntN(len(candidates))]
-		s.AddICE(uint64(target.ID))
+		s.AddICE(target.ID)
 		s.AddEvent(fmt.Sprintf("New ICE spawned at %s", target.Label))
 	}
 	interval := max(s.Config.ICESpawnMinInterval, s.Config.ICESpawnTick-s.Tick/s.Config.ICESpawnTick)
@@ -76,10 +78,10 @@ func (s *State) spawnScheduledICE() {
 // single burst, then schedules the next escalation 40 ticks later.
 func (s *State) escalateICE() {
 	for _, fw := range s.Network.NodesByType(network.NodeFirewall) {
-		s.AddICE(uint64(fw.ID))
+		s.AddICE(fw.ID)
 	}
 	for _, core := range s.Network.NodesByType(network.NodeCore) {
-		s.AddICE(uint64(core.ID))
+		s.AddICE(core.ID)
 	}
 	s.AddEvent("ICE defenses escalating — firewalls and core reinforced!")
 	s.sched.Schedule(scheduler.Event{
@@ -157,9 +159,8 @@ func (s *State) applyDeaths(deaths []int) {
 // Programs spread to empty nodes when they have enough neighbors.
 func (s *State) applySpawns(spawns []network.SpawnAction) {
 	for _, spawn := range spawns {
-		node := s.Network.GetNode(spawn.NodeID)
-		switch spawn.Kind {
-		case entity.KindProgram:
+		if spawn.Kind == entity.KindProgram {
+			node := s.Network.GetNode(spawn.NodeID)
 			s.AddProgram(spawn.NodeID)
 			s.AddEvent(fmt.Sprintf("Program auto-spread to %s (%d nearby programs)",
 				node.Label, spawn.NeighborCnt))
@@ -314,6 +315,33 @@ func (s *State) countProgramsOnCore(coreNodes []*network.Node) int {
 	return count
 }
 
+// spawnEntity is a common helper for resource-gated entity placement commands.
+func spawnEntity(
+	s *State, nodeID uint64, resource *int, cost int,
+	resourceName string, place func(uint64), eventMsg string,
+	onComplete func(bool, string),
+) {
+	if *resource < cost {
+		if onComplete != nil {
+			onComplete(false, fmt.Sprintf("Not enough %s (need %d, have %d)", resourceName, cost, *resource))
+		}
+		return
+	}
+	node := s.Network.GetNode(nodeID)
+	if node == nil {
+		if onComplete != nil {
+			onComplete(false, "Invalid node")
+		}
+		return
+	}
+	*resource -= cost
+	place(nodeID)
+	s.AddEvent(fmt.Sprintf(eventMsg, node.Label, cost))
+	if onComplete != nil {
+		onComplete(true, "")
+	}
+}
+
 // SpawnProgramCmd places a new program on the given node if the player
 // has enough Data. Deducts ProgramSpawnCost on success.
 type SpawnProgramCmd struct {
@@ -322,27 +350,8 @@ type SpawnProgramCmd struct {
 }
 
 func (c *SpawnProgramCmd) Execute(_ context.Context, s *State) {
-	if s.Resources.Data < s.Config.ProgramSpawnCost {
-		if c.OnComplete != nil {
-			c.OnComplete(false, fmt.Sprintf("Not enough Data (need %d, have %d)",
-				s.Config.ProgramSpawnCost, s.Resources.Data))
-		}
-		return
-	}
-	node := s.Network.GetNode(c.NodeID)
-	if node == nil {
-		if c.OnComplete != nil {
-			c.OnComplete(false, "Invalid node")
-		}
-		return
-	}
-	s.Resources.Data -= s.Config.ProgramSpawnCost
-	s.AddProgram(c.NodeID)
-	s.AddEvent(fmt.Sprintf("You spawned a program at %s (-%d Data)",
-		node.Label, s.Config.ProgramSpawnCost))
-	if c.OnComplete != nil {
-		c.OnComplete(true, "")
-	}
+	spawnEntity(s, c.NodeID, &s.Resources.Data, s.Config.ProgramSpawnCost, "Data",
+		func(id uint64) { s.AddProgram(id) }, "You spawned a program at %s (-%d Data)", c.OnComplete)
 }
 
 // DeployVirusCmd places a virus on the given node if the player has enough
@@ -353,27 +362,8 @@ type DeployVirusCmd struct {
 }
 
 func (c *DeployVirusCmd) Execute(_ context.Context, s *State) {
-	if s.Resources.Compute < s.Config.VirusDeployCost {
-		if c.OnComplete != nil {
-			c.OnComplete(false, fmt.Sprintf("Not enough Compute (need %d, have %d)",
-				s.Config.VirusDeployCost, s.Resources.Compute))
-		}
-		return
-	}
-	node := s.Network.GetNode(c.NodeID)
-	if node == nil {
-		if c.OnComplete != nil {
-			c.OnComplete(false, "Invalid node")
-		}
-		return
-	}
-	s.Resources.Compute -= s.Config.VirusDeployCost
-	s.AddVirus(c.NodeID)
-	s.AddEvent(fmt.Sprintf("You deployed a virus at %s (-%d Compute, corrupts adjacent ICE)",
-		node.Label, s.Config.VirusDeployCost))
-	if c.OnComplete != nil {
-		c.OnComplete(true, "")
-	}
+	spawnEntity(s, c.NodeID, &s.Resources.Compute, s.Config.VirusDeployCost, "Compute",
+		func(id uint64) { s.AddVirus(id) }, "You deployed a virus at %s (-%d Compute, corrupts adjacent ICE)", c.OnComplete)
 }
 
 // TogglePauseCmd flips the paused flag. While paused, TickCmd still
@@ -399,8 +389,12 @@ func (c *GetStateCmd) Execute(_ context.Context, s *State) {
 // InitGame creates a fully initialized game state: generates the network,
 // places initial programs on one server (clustered for mutual support),
 // places ICE on firewalls and core, and schedules recurring ICE events.
-func InitGame(cfg Config) *State {
-	rng := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
+func InitGame(cfg *Config) *State {
+	var seed [16]byte
+	_, _ = crand.Read(seed[:])
+	s1 := binary.LittleEndian.Uint64(seed[:8])
+	s2 := binary.LittleEndian.Uint64(seed[8:])
+	rng := rand.New(rand.NewPCG(s1, s2)) //nolint:gosec // seeded from crypto/rand
 	net := network.Generate(rng)
 
 	s := NewState(net, cfg)
@@ -412,7 +406,7 @@ func InitGame(cfg Config) *State {
 	if len(servers) > 0 {
 		start := servers[0]
 		for range cfg.InitialPrograms {
-			s.AddProgram(uint64(start.ID))
+			s.AddProgram(start.ID)
 		}
 		s.AddEvent(fmt.Sprintf("%d initial programs at %s", cfg.InitialPrograms, start.Label))
 	}
@@ -420,14 +414,14 @@ func InitGame(cfg Config) *State {
 	// Spawn initial ICE on firewalls
 	firewalls := net.NodesByType(network.NodeFirewall)
 	for i := range min(cfg.InitialICE, len(firewalls)) {
-		s.AddICE(uint64(firewalls[i].ID))
+		s.AddICE(firewalls[i].ID)
 		s.AddEvent(fmt.Sprintf("Initial ICE at %s (blocks path to core)", firewalls[i].Label))
 	}
 
 	// Defend core from the start
 	coreNodes := net.NodesByType(network.NodeCore)
 	for _, core := range coreNodes {
-		s.AddICE(uint64(core.ID))
+		s.AddICE(core.ID)
 		s.AddEvent(fmt.Sprintf("Initial ICE at %s (core defense)", core.Label))
 	}
 
