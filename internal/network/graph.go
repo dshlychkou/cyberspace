@@ -1,7 +1,7 @@
 package network
 
 import (
-	"github.com/barnowlsnest/go-datalib/pkg/dag"
+	"github.com/barnowlsnest/go-datalib/v5/pkg/dag"
 )
 
 const GroupName = "cyberspace"

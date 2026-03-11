@@ -33,3 +33,6 @@ go.work.sum
 .ai
 
 bin/
+
+*.png
+*.log

@@ -1,7 +1,12 @@
 package game
 
 import (
+	"fmt"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
+
+	"github.com/barnowlsnest/go-logslib/v2/pkg/logger"
 
 	"github.com/dshlychkou/cyberspace/internal/entity"
 	"github.com/dshlychkou/cyberspace/internal/network"
@@ -20,6 +25,8 @@ type State struct {
 	Events       []Event
 	sched        *scheduler.Scheduler
 	rng          *rand.Rand
+	eventLogger  *logger.Logger
+	eventLogFile *os.File
 	Tick         int
 	CoreHoldLen  int // consecutive ticks with enough programs on core
 	Score        int
@@ -232,6 +239,37 @@ func (s *State) AddEvent(msg string) {
 	})
 	if len(s.Events) > maxStoredEvents {
 		s.Events = s.Events[len(s.Events)-maxStoredEvents:]
+	}
+	if s.eventLogger != nil {
+		s.eventLogger.Info(msg, logger.Field{Key: "tick", Value: s.Tick})
+	}
+}
+
+// initEventLog opens the event log file and creates a logger for it.
+func (s *State) initEventLog(path string) error {
+	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open event log: %w", err)
+	}
+	s.eventLogFile = f
+	s.eventLogger = logger.New(logger.Config{
+		Level:  logger.InfoLevel,
+		Format: logger.JSONFormat,
+		Output: f,
+		UseUTC: true,
+	})
+	return nil
+}
+
+// CloseEventLog flushes and closes the event log file if open.
+func (s *State) CloseEventLog() {
+	if s.eventLogger != nil {
+		s.eventLogger.Flush()
+		s.eventLogger = nil
+	}
+	if s.eventLogFile != nil {
+		_ = s.eventLogFile.Close()
+		s.eventLogFile = nil
 	}
 }
 
