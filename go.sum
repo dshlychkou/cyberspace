@@ -8,8 +8,10 @@ github.com/barnowlsnest/go-actorlib/v4 v4.0.0 h1:ssn1KZx3kP08qMkJ87t5/zS6QOotmjW
 github.com/barnowlsnest/go-actorlib/v4 v4.0.0/go.mod h1:Ty52Iw1Owsws5k3uzgLsBozgIs2el790pmGMvR4A6O4=
 github.com/barnowlsnest/go-configlib/v2 v2.0.0 h1:/iEdDiib57euVdNK01GSQBa/Ly2tmdpNC8lc7+7u7Z8=
 github.com/barnowlsnest/go-configlib/v2 v2.0.0/go.mod h1:QNwtyrHCDGHK/kRVxZDJ8YYMJ0rFfc460X+YosvDCSI=
-github.com/barnowlsnest/go-datalib v0.0.0-20260201014700-be56b0e24ef7 h1:oUh5vhrJD9akYFSp/5M/qJFgCVtdub+WDShO5QEZkvs=
-github.com/barnowlsnest/go-datalib v0.0.0-20260201014700-be56b0e24ef7/go.mod h1:veqJrnqcCZla6MZE2B0N57OZvNErOhsFtSyo2AYqNw0=
+github.com/barnowlsnest/go-datalib/v5 v5.0.0 h1:oCGYdUKrh9ATbNtDxrTJgURuYQLEIg2GvyE7ncUeS8w=
+github.com/barnowlsnest/go-datalib/v5 v5.0.0/go.mod h1:JtwOcChfCjVvWml6a2tIetTO9+F2Rb2M4yMb6aesoHk=
+github.com/barnowlsnest/go-logslib/v2 v2.0.0 h1:jecd1aQgyIBjIBcH+L7qOBeS5prtSCHMHaklPe7P2d0=
+github.com/barnowlsnest/go-logslib/v2 v2.0.0/go.mod h1:N/GMGArt46ywtKx4n3HIqa+SRmchq9szprG/6+EMKDg=
 github.com/charmbracelet/colorprofile v0.4.2 h1:BdSNuMjRbotnxHSfxy+PCSa4xAmz7szw70ktAtWRYrY=
 github.com/charmbracelet/colorprofile v0.4.2/go.mod h1:0rTi81QpwDElInthtrQ6Ni7cG0sDtwAd4C4le060fT8=
 github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8 h1:eyFRbAmexyt43hVfeyBofiGSEmJ7krjLOYt/9CF5NKA=

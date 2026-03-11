@@ -28,6 +28,13 @@ func sidebarObjective(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleCore.Render("★ CORE"))
 	fmt.Fprintf(sb, " and hold %d ticks.\n", snap.CoreWinDuration)
 	sb.WriteByte('\n')
+	sb.WriteString(styleTitle.Render("TIP"))
+	sb.WriteByte('\n')
+	sb.WriteString("Hold ")
+	sb.WriteString(styleData.Render("Vaults"))
+	sb.WriteString(" for Data income\n")
+	sb.WriteString("or your programs starve!\n")
+	sb.WriteByte('\n')
 }
 
 func sidebarResources(sb *strings.Builder, snap *game.StateSnapshot) {
@@ -89,7 +96,7 @@ func sidebarRules(sb *strings.Builder) {
 	sb.WriteString("FW and CORE: manual ")
 	sb.WriteString(styleSelected.Render("S"))
 	sb.WriteString(".\n")
-	sb.WriteString("ICE>=prog → prog dies.\n")
+	sb.WriteString("ICE>prog → prog dies.\n")
 	sb.WriteString("Virus flips nearby ICE.\n")
 	sb.WriteByte('\n')
 }

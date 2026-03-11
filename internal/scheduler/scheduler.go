@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"github.com/barnowlsnest/go-datalib/pkg/tree"
+	"github.com/barnowlsnest/go-datalib/v5/pkg/tree"
 )
 
 type Scheduler struct {

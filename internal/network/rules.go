@@ -135,7 +135,7 @@ func (ev *ruleEvaluator) evalProgramSurvival(nc *nodeContext) {
 		}
 		support := nc.localPrograms - 1 + nc.neighborPrograms
 		alive := support >= ev.cfg.SurviveMin && support <= ev.cfg.SurviveMax
-		if nc.localICE >= nc.localPrograms {
+		if nc.localICE > nc.localPrograms {
 			alive = false
 		}
 		if !alive {
@@ -152,7 +152,7 @@ func (ev *ruleEvaluator) evalAutoSpread(nc *nodeContext) {
 		return
 	}
 	canSpread := nc.node.Type == NodeServer || nc.node.Type == NodeRelay || nc.node.Type == NodeVault
-	if canSpread && nc.neighborPrograms >= ev.cfg.SpreadExact {
+	if canSpread && nc.neighborPrograms >= ev.cfg.SpreadExact && nc.neighborPrograms <= ev.cfg.SurviveMax {
 		ev.result.Spawns = append(ev.result.Spawns, SpawnAction{
 			Kind:        entity.KindProgram,
 			NodeID:      nc.nodeID,
@@ -162,10 +162,10 @@ func (ev *ruleEvaluator) evalAutoSpread(nc *nodeContext) {
 	}
 }
 
-// evalICESuppress kills all programs on a node where ICE meets or
-// outnumbers them.
+// evalICESuppress kills all programs on a node where ICE strictly
+// outnumbers them. Equal counts means programs hold their ground.
 func (ev *ruleEvaluator) evalICESuppress(nc *nodeContext) {
-	if nc.localICE == 0 || nc.localPrograms == 0 || nc.localICE < nc.localPrograms {
+	if nc.localICE == 0 || nc.localPrograms == 0 || nc.localICE <= nc.localPrograms {
 		return
 	}
 	for _, e := range nc.entities {

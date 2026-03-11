@@ -7,7 +7,8 @@ require (
 	charm.land/lipgloss/v2 v2.0.0
 	github.com/barnowlsnest/go-actorlib/v4 v4.0.0
 	github.com/barnowlsnest/go-configlib/v2 v2.0.0
-	github.com/barnowlsnest/go-datalib v0.0.0-20260201014700-be56b0e24ef7
+	github.com/barnowlsnest/go-datalib/v5 v5.0.0
+	github.com/barnowlsnest/go-logslib/v2 v2.0.0
 )
 
 require (

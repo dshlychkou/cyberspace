@@ -356,7 +356,7 @@ func nodeHint(n game.NodeSnapshot, programs, ices int, snap *game.StateSnapshot)
 		if ices > 0 && programs == 0 {
 			return "ICE here. Deploy a virus (V) on a neighbor or spawn a program (S)."
 		}
-		if ices > 0 && ices >= programs {
+		if ices > 0 && ices > programs {
 			return fmt.Sprintf("%dI vs %dP — outnumbered! Spawn more (S) or virus (V) a neighbor.", ices, programs)
 		}
 		if programs > 0 {

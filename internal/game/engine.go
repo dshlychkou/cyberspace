@@ -121,30 +121,45 @@ func (s *State) applyRules() {
 	s.applyFlips(result.Flips)
 }
 
-// applyDeaths removes killed entities and logs the cause. Programs die from
-// ICE outnumbering them on the same node or from insufficient neighbor support.
+// applyDeaths removes killed entities and logs the cause. Death reasons are
+// computed from a pre-death snapshot so messages are accurate even when
+// multiple entities on the same node die in the same tick.
 func (s *State) applyDeaths(deaths []int) {
+	// Pre-compute per-node counts from the snapshot (before any removals)
+	nodePrograms := make(map[uint64]int)
+	nodeICE := make(map[uint64]int)
+	for _, p := range s.Programs {
+		nodePrograms[p.NodeID]++
+	}
+	for _, ice := range s.ICEs {
+		nodeICE[ice.NodeID]++
+	}
+	neighborSupport := func(nodeID uint64) int {
+		support := nodePrograms[nodeID] - 1
+		for _, nid := range s.Network.Neighbors(nodeID) {
+			support += nodePrograms[nid]
+		}
+		return support
+	}
+
+	// Log reasons, then remove
 	for _, id := range deaths {
 		if p, ok := s.Programs[id]; ok {
 			node := s.Network.GetNode(p.NodeID)
-			nodeICECount := 0
-			nodeProgramCount := 0
-			for _, ice := range s.ICEs {
-				if ice.NodeID == p.NodeID {
-					nodeICECount++
-				}
-			}
-			for _, prog := range s.Programs {
-				if prog.NodeID == p.NodeID {
-					nodeProgramCount++
-				}
-			}
-			if nodeICECount > nodeProgramCount {
+			ice := nodeICE[p.NodeID]
+			progs := nodePrograms[p.NodeID]
+			if ice > progs {
 				s.AddEvent(fmt.Sprintf("Program killed at %s (ICE outnumbers: %dI vs %dP)",
-					node.Label, nodeICECount, nodeProgramCount))
+					node.Label, ice, progs))
 			} else {
-				s.AddEvent(fmt.Sprintf("Program died at %s (not enough nearby support)",
-					node.Label))
+				support := neighborSupport(p.NodeID)
+				if support > s.Config.SurviveMax {
+					s.AddEvent(fmt.Sprintf("Program died at %s (overcrowded: %d support, max %d)",
+						node.Label, support, s.Config.SurviveMax))
+				} else {
+					s.AddEvent(fmt.Sprintf("Program died at %s (isolated: %d support, need %d)",
+						node.Label, support, s.Config.SurviveMin))
+				}
 			}
 		}
 		if ice, ok := s.ICEs[id]; ok {
@@ -374,6 +389,13 @@ func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
 }
 
+// ShutdownCmd closes open resources such as the event log file.
+type ShutdownCmd struct{}
+
+func (c *ShutdownCmd) Execute(_ context.Context, s *State) {
+	s.CloseEventLog()
+}
+
 // GetStateCmd returns a snapshot of the current state without advancing
 // the simulation. Used by the TUI to fetch state on demand.
 type GetStateCmd struct {
@@ -401,14 +423,46 @@ func InitGame(cfg *Config) *State {
 	s.rng = rng
 	s.sched = scheduler.New()
 
-	// Spawn initial programs clustered on one server (mutual support)
+	if cfg.EventLogFile != "" {
+		if err := s.initEventLog(cfg.EventLogFile); err != nil {
+			s.AddEvent(fmt.Sprintf("Warning: could not open event log file: %v", err))
+		}
+	}
+
+	// Spawn initial programs on a server adjacent to a vault so the player
+	// has a reachable Data income source from the start.
 	servers := net.NodesByType(network.NodeServer)
+	vaults := net.NodesByType(network.NodeVault)
 	if len(servers) > 0 {
 		start := servers[0]
-		for range cfg.InitialPrograms {
-			s.AddProgram(start.ID)
+		var nearVault *network.Node
+	outer:
+		for _, srv := range servers {
+			for _, nid := range net.Neighbors(srv.ID) {
+				for _, vlt := range vaults {
+					if vlt.ID == nid {
+						start = srv
+						nearVault = vlt
+						break outer
+					}
+				}
+			}
 		}
-		s.AddEvent(fmt.Sprintf("%d initial programs at %s", cfg.InitialPrograms, start.Label))
+
+		if nearVault != nil && cfg.InitialPrograms > 1 {
+			// Split: bulk on server, 1 on vault for immediate Data income
+			for range cfg.InitialPrograms - 1 {
+				s.AddProgram(start.ID)
+			}
+			s.AddProgram(nearVault.ID)
+			s.AddEvent(fmt.Sprintf("%d programs at %s, 1 at %s (early income)",
+				cfg.InitialPrograms-1, start.Label, nearVault.Label))
+		} else {
+			for range cfg.InitialPrograms {
+				s.AddProgram(start.ID)
+			}
+			s.AddEvent(fmt.Sprintf("%d initial programs at %s", cfg.InitialPrograms, start.Label))
+		}
 	}
 
 	// Spawn initial ICE on firewalls

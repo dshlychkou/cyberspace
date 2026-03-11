@@ -609,6 +609,7 @@ func (m *Model) spatialSelect(dirX, dirY int) uint64 {
 
 func (m *Model) stopEngine() {
 	if m.engineRef != nil {
+		_ = m.engineRef.Receive(m.ctx, &game.ShutdownCmd{})
 		_ = m.engineRef.Stop(5 * time.Second)
 		m.engineRef = nil
 	}
