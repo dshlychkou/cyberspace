@@ -21,6 +21,7 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	model := tui.NewModel(ctx, cfg)
 	p := tea.NewProgram(model)
@@ -37,8 +38,6 @@ func main() {
 	}()
 
 	if _, err := p.Run(); err != nil {
-		stop()
 		log.Fatalf("Error running game: %v", err)
 	}
-	stop()
 }
