@@ -8,7 +8,7 @@ const (
 
 type ICE struct {
 	Entity
-	State ICEState
+	State ICEState `json:"state"`
 }
 
 func NewICE(id int, nodeID uint64) *ICE {

@@ -38,11 +38,20 @@ func testConfig() Config {
 	}
 }
 
+func mustInitGame(t *testing.T, cfg *Config) *State {
+	t.Helper()
+	state, err := InitGame(cfg)
+	if err != nil {
+		t.Fatalf("InitGame: %v", err)
+	}
+	return state
+}
+
 // --- Init ---
 
 func TestInitGame(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 
 	if state == nil {
 		t.Fatal("expected non-nil state")
@@ -66,7 +75,7 @@ func TestInitGame(t *testing.T) {
 
 func TestSpawnProgram(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 
 	var nodeID uint64
 	for id := range state.Network.Nodes {
@@ -87,7 +96,7 @@ func TestSpawnProgram(t *testing.T) {
 
 func TestStateSnapshot(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 	snap := state.Snapshot()
 
 	if snap.Tick != 0 {
@@ -130,7 +139,7 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 
 func TestTickCmdViaActor(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -153,7 +162,7 @@ func TestTickCmdViaActor(t *testing.T) {
 
 func TestSpawnProgramCmdViaActor(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -191,7 +200,7 @@ func TestSpawnProgramCmdViaActor(t *testing.T) {
 
 func TestMultipleTicksViaActor(t *testing.T) {
 	cfg := testConfig()
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 	a := startTestActor(t, state)
 	ctx := context.Background()
 
@@ -574,7 +583,7 @@ func TestInitGameSurvives20Ticks(t *testing.T) {
 		cfg := testConfig()
 		cfg.ICESpawnTick = 999 // no new ICE
 		cfg.ICEEscalationTick = 999
-		state := InitGame(&cfg)
+		state := mustInitGame(t, &cfg)
 
 		for tick := range ticks {
 			state.Tick++

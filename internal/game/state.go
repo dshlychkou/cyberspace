@@ -1,6 +1,8 @@
 package game
 
 import (
+	crand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -12,6 +14,16 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/network"
 	"github.com/dshlychkou/cyberspace/internal/scheduler"
 )
+
+func newGameRNG() (*rand.Rand, error) {
+	var seed [16]byte
+	if _, err := crand.Read(seed[:]); err != nil {
+		return nil, fmt.Errorf("seed RNG: %w", err)
+	}
+	s1 := binary.LittleEndian.Uint64(seed[:8])
+	s2 := binary.LittleEndian.Uint64(seed[8:])
+	return rand.New(rand.NewPCG(s1, s2)), nil
+}
 
 const maxStoredEvents = 100
 
@@ -37,14 +49,14 @@ type State struct {
 }
 
 type Resources struct {
-	Data    int
-	Compute int
-	Cycles  int
+	Data    int `json:"data"`
+	Compute int `json:"compute"`
+	Cycles  int `json:"cycles"`
 }
 
 type Event struct {
-	Message string
-	Tick    int
+	Message string `json:"message"`
+	Tick    int    `json:"tick"`
 }
 
 type StateSnapshot struct {

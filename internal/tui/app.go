@@ -24,6 +24,7 @@ const (
 	screenGame
 	screenSettings
 	screenAbout
+	screenLoad
 )
 
 const (
@@ -33,11 +34,13 @@ const (
 	keyLeft  = "left"
 	keyRight = "right"
 	keyEsc   = "esc"
+	keyEnter = "enter"
 )
 
 type stateMsg game.StateSnapshot
 type tickMsg time.Time
 type errorMsg string
+type saveSuccessMsg string
 
 type Model struct {
 	screen      screen
@@ -57,6 +60,8 @@ type Model struct {
 	tickRate       time.Duration
 	statusMsg      string
 	metrics        *middleware.Metrics
+	saveFiles      []game.SaveFileInfo
+	loadIdx        int
 }
 
 type StateProvider struct {
@@ -83,6 +88,10 @@ func doTick(d time.Duration) tea.Cmd {
 	})
 }
 
+func (m *Model) gameInProgress() bool {
+	return m.engineRef != nil
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
@@ -103,34 +112,67 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSettings(msg)
 	case screenAbout:
 		return m.updateAbout(msg)
+	case screenLoad:
+		return m.updateLoad(msg)
 	}
 
 	return m, nil
 }
 
 func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if msg, ok := msg.(tea.KeyPressMsg); ok {
+	items := m.menuItems()
+
+	switch msg := msg.(type) {
+	case saveSuccessMsg:
+		m.statusMsg = string(msg)
+		return m, nil
+
+	case errorMsg:
+		m.statusMsg = string(msg)
+		return m, nil
+
+	case tea.KeyPressMsg:
+		// Clamp index to valid range
+		if m.menuIdx >= len(items) {
+			m.menuIdx = len(items) - 1
+		}
+
 		switch msg.String() {
 		case "q", keyCtrlC:
+			m.destroyGame()
 			return m, tea.Quit
 		case keyUp, "k":
 			if m.menuIdx > 0 {
 				m.menuIdx--
 			}
 		case keyDown, "j":
-			if m.menuIdx < 2 {
+			if m.menuIdx < len(items)-1 {
 				m.menuIdx++
 			}
-		case "enter":
-			switch m.menuIdx {
-			case 0:
-				return m.startGame()
-			case 1:
-				m.screen = screenSettings
-			case 2:
-				m.screen = screenAbout
-			}
+		case keyEnter:
+			return m.handleMenuAction(items[m.menuIdx].Action)
 		}
+	}
+	return m, nil
+}
+
+func (m *Model) handleMenuAction(action menuAction) (tea.Model, tea.Cmd) {
+	switch action {
+	case menuContinue:
+		return m.continueGame()
+	case menuSave:
+		cmd := m.saveGame()
+		return m, cmd
+	case menuNewGame:
+		m.destroyGame()
+		return m.startGame()
+	case menuLoad:
+		m.screen = screenLoad
+		m.loadSaves()
+	case menuSettings:
+		m.screen = screenSettings
+	case menuAbout:
+		m.screen = screenAbout
 	}
 	return m, nil
 }
@@ -196,7 +238,7 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case keyEsc:
-		return m.exitToMenu()
+		return m.pauseAndReturnToMenu()
 	case "r":
 		return m.handleRestart()
 	case "space":
@@ -220,23 +262,36 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) exitToMenu() (tea.Model, tea.Cmd) {
-	m.stopEngine()
+func (m *Model) pauseAndReturnToMenu() (tea.Model, tea.Cmd) {
+	// Pause the game if it's not already paused
+	var cmd tea.Cmd
+	if !m.state.Paused {
+		cmd = m.sendTogglePause()
+	}
 	m.screen = screenMenu
+	m.menuIdx = 0
+	m.statusMsg = ""
+	return m, cmd
+}
+
+func (m *Model) destroyGame() {
+	m.stopEngine()
 	m.state = game.StateSnapshot{}
 	m.selectedNodeID = 0
 	m.nodePositions = nil
 	m.nodeIDs = nil
 	m.statusMsg = ""
-	return m, nil
+}
+
+func (m *Model) continueGame() (tea.Model, tea.Cmd) {
+	m.screen = screenGame
+	m.statusMsg = ""
+	return m, doTick(m.tickRate)
 }
 
 func (m *Model) handleRestart() (tea.Model, tea.Cmd) {
 	if m.state.GameOver {
-		if m.engineRef != nil {
-			_ = m.engineRef.Stop(5 * time.Second)
-			m.engineRef = nil
-		}
+		m.destroyGame()
 		return m.startGame()
 	}
 	return m, nil
@@ -289,9 +344,17 @@ func (m *Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) startGame() (tea.Model, tea.Cmd) {
-	gameState := game.InitGame(&m.cfg)
+	gameState, err := game.InitGame(&m.cfg)
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to init game: %v", err)
+		return m, nil
+	}
 	gameState.Paused = true
 
+	return m.startEngineWithState(gameState)
+}
+
+func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd) {
 	metrics := &middleware.Metrics{}
 
 	engineActor, err := actor.StartNew[*game.State](
@@ -333,6 +396,61 @@ func (m *Model) startGame() (tea.Model, tea.Cmd) {
 	return m, doTick(m.tickRate)
 }
 
+func (m *Model) saveGame() tea.Cmd {
+	return func() tea.Msg {
+		done := make(chan game.SaveFile, 1)
+		cmd := &game.SaveCmd{
+			OnComplete: func(sf game.SaveFile) {
+				done <- sf
+			},
+		}
+		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
+			return errorMsg(fmt.Sprintf("save error: %v", err))
+		}
+
+		var sf game.SaveFile
+		select {
+		case sf = <-done:
+		case <-time.After(5 * time.Second):
+			return errorMsg("save timeout")
+		}
+
+		dir, err := game.ResolveSaveDir(m.cfg.SaveDir)
+		if err != nil {
+			return errorMsg(fmt.Sprintf("save dir error: %v", err))
+		}
+
+		filename := time.Now().Format("2006-01-02T15-04-05") + ".json"
+		path := dir + "/" + filename
+		if err := game.WriteSaveFile(path, &sf); err != nil {
+			return errorMsg(fmt.Sprintf("save write error: %v", err))
+		}
+
+		return saveSuccessMsg(fmt.Sprintf("Game saved: %s", filename))
+	}
+}
+
+func (m *Model) loadGame(path string) (tea.Model, tea.Cmd) {
+	m.destroyGame()
+
+	sf, err := game.ReadSaveFile(path)
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to load: %v", err)
+		m.screen = screenMenu
+		return m, nil
+	}
+
+	gameState, err2 := game.FromSaveFile(&sf)
+	if err2 != nil {
+		m.statusMsg = fmt.Sprintf("Failed to restore game: %v", err2)
+		m.screen = screenMenu
+		return m, nil
+	}
+	gameState.Paused = true
+
+	return m.startEngineWithState(gameState)
+}
+
 func (m *Model) View() tea.View {
 	if m.width == 0 || m.height == 0 {
 		return tea.NewView("Loading CYBERSPACE...")
@@ -341,13 +459,15 @@ func (m *Model) View() tea.View {
 	var content string
 	switch m.screen {
 	case screenMenu:
-		content = renderMenu(m.menuIdx, m.width, m.height)
+		content = renderMenu(m.menuItems(), m.menuIdx, m.width, m.height, m.statusMsg)
 	case screenGame:
 		content = m.renderGame()
 	case screenSettings:
 		content = renderSettings(&m.cfg, m.settingsIdx, m.width, m.height)
 	case screenAbout:
 		content = renderAbout(m.width, m.height)
+	case screenLoad:
+		content = renderLoadScreen(m.saveFiles, m.loadIdx, m.width, m.height)
 	}
 
 	v := tea.NewView(content)

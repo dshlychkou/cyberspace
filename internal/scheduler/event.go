@@ -8,8 +8,8 @@ const (
 )
 
 type Event struct {
-	Tick     int
-	Priority int // lower = higher priority
-	Type     EventType
-	Data     any
+	Tick     int       `json:"tick"`
+	Priority int       `json:"priority"`
+	Type     EventType `json:"type"`
+	Data     any       `json:"data,omitempty"`
 }

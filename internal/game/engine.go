@@ -2,10 +2,7 @@ package game
 
 import (
 	"context"
-	crand "crypto/rand"
-	"encoding/binary"
 	"fmt"
-	"math/rand/v2"
 
 	"github.com/dshlychkou/cyberspace/internal/entity"
 	"github.com/dshlychkou/cyberspace/internal/network"
@@ -389,6 +386,19 @@ func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
 }
 
+// SaveCmd serializes the current game state into a SaveFile. File I/O
+// happens in the TUI layer via the OnComplete callback, not inside the actor.
+type SaveCmd struct {
+	OnComplete func(SaveFile)
+}
+
+func (c *SaveCmd) Execute(_ context.Context, s *State) {
+	sf := s.ToSaveFile()
+	if c.OnComplete != nil {
+		c.OnComplete(sf)
+	}
+}
+
 // ShutdownCmd closes open resources such as the event log file.
 type ShutdownCmd struct{}
 
@@ -411,12 +421,11 @@ func (c *GetStateCmd) Execute(_ context.Context, s *State) {
 // InitGame creates a fully initialized game state: generates the network,
 // places initial programs on one server (clustered for mutual support),
 // places ICE on firewalls and core, and schedules recurring ICE events.
-func InitGame(cfg *Config) *State {
-	var seed [16]byte
-	_, _ = crand.Read(seed[:])
-	s1 := binary.LittleEndian.Uint64(seed[:8])
-	s2 := binary.LittleEndian.Uint64(seed[8:])
-	rng := rand.New(rand.NewPCG(s1, s2)) //nolint:gosec // seeded from crypto/rand
+func InitGame(cfg *Config) (*State, error) {
+	rng, err := newGameRNG()
+	if err != nil {
+		return nil, err
+	}
 	net := network.Generate(rng)
 
 	s := NewState(net, cfg)
@@ -491,5 +500,5 @@ func InitGame(cfg *Config) *State {
 		Type:     scheduler.EventICEEscalation,
 	})
 
-	return s
+	return s, nil
 }

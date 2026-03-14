@@ -10,7 +10,40 @@ import (
 	"github.com/dshlychkou/cyberspace/internal/game"
 )
 
-var menuItems = []string{"Play", "Settings", "About"}
+type menuAction int
+
+const (
+	menuContinue menuAction = iota
+	menuSave
+	menuNewGame
+	menuLoad
+	menuSettings
+	menuAbout
+)
+
+type menuItem struct {
+	Label  string
+	Action menuAction
+}
+
+func (m *Model) menuItems() []menuItem {
+	if m.gameInProgress() {
+		return []menuItem{
+			{"Continue", menuContinue},
+			{"Save", menuSave},
+			{"New Game", menuNewGame},
+			{"Load", menuLoad},
+			{"Settings", menuSettings},
+			{"About", menuAbout},
+		}
+	}
+	return []menuItem{
+		{"New Game", menuNewGame},
+		{"Load", menuLoad},
+		{"Settings", menuSettings},
+		{"About", menuAbout},
+	}
+}
 
 type settingItem struct {
 	Label  string
@@ -109,7 +142,7 @@ var settingsItems = []settingItem{
 		func(c game.Config) int { return c.ICEEscalationTick }, func(c *game.Config, v int) { c.ICEEscalationTick = v }, 5, 10, 500),
 }
 
-func renderMenu(idx, width, height int) string {
+func renderMenu(items []menuItem, idx, width, height int, statusMsg string) string {
 	// ASCII art title with neon purple glow
 	logoLines := []string{
 		" ██████╗██╗   ██╗██████╗ ███████╗██████╗ ",
@@ -129,31 +162,43 @@ func renderMenu(idx, width, height int) string {
 
 	subtitle := lipgloss.NewStyle().Foreground(colorNeonPink).Render("   S   P   A   C   E")
 
-	var items []string
-	for i, item := range menuItems {
+	var menuLines []string
+	for i, item := range items {
 		if i == idx {
 			cursor := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Render("▸ ")
-			label := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Render(item)
-			items = append(items, cursor+label)
+			label := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Render(item.Label)
+			menuLines = append(menuLines, cursor+label)
 		} else {
-			items = append(items, "  "+lipgloss.NewStyle().Foreground(colorNeonViolet).Render(item))
+			menuLines = append(menuLines, "  "+lipgloss.NewStyle().Foreground(colorNeonViolet).Render(item.Label))
 		}
 	}
 
 	divider := lipgloss.NewStyle().Foreground(colorNeonViolet).Render("────────────────────")
 
-	menu := lipgloss.JoinVertical(lipgloss.Center,
+	sections := []string{
 		title,
 		subtitle,
 		"",
 		divider,
 		"",
-		strings.Join(items, "\n"),
+		strings.Join(menuLines, "\n"),
 		"",
 		divider,
+	}
+
+	if statusMsg != "" {
+		sections = append(sections,
+			"",
+			lipgloss.NewStyle().Foreground(colorNeonCyan).Render(statusMsg),
+		)
+	}
+
+	sections = append(sections,
 		"",
 		lipgloss.NewStyle().Foreground(colorDim).Render("arrows: navigate  enter: select  q: quit"),
 	)
+
+	menu := lipgloss.JoinVertical(lipgloss.Center, sections...)
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, menu)
 }
