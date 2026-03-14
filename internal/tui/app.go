@@ -344,7 +344,11 @@ func (m *Model) updateAbout(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) startGame() (tea.Model, tea.Cmd) {
-	gameState := game.InitGame(&m.cfg)
+	gameState, err := game.InitGame(&m.cfg)
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to init game: %v", err)
+		return m, nil
+	}
 	gameState.Paused = true
 
 	return m.startEngineWithState(gameState)
@@ -436,7 +440,12 @@ func (m *Model) loadGame(path string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	gameState := game.FromSaveFile(&sf)
+	gameState, err2 := game.FromSaveFile(&sf)
+	if err2 != nil {
+		m.statusMsg = fmt.Sprintf("Failed to restore game: %v", err2)
+		m.screen = screenMenu
+		return m, nil
+	}
 	gameState.Paused = true
 
 	return m.startEngineWithState(gameState)

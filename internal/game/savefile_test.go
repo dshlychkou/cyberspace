@@ -5,10 +5,19 @@ import (
 	"testing"
 )
 
+func mustFromSaveFile(t *testing.T, sf *SaveFile) *State {
+	t.Helper()
+	state, err := FromSaveFile(sf)
+	if err != nil {
+		t.Fatalf("FromSaveFile: %v", err)
+	}
+	return state
+}
+
 func TestSaveFileRoundtrip(t *testing.T) {
 	cfg := testConfig()
 	cfg.EventLogFile = "" // no log file for tests
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 
 	// Run a few ticks
 	for range 5 {
@@ -33,7 +42,7 @@ func TestSaveFileRoundtrip(t *testing.T) {
 	}
 
 	// Restore
-	restored := FromSaveFile(&sf2)
+	restored := mustFromSaveFile(t, &sf2)
 
 	// Verify fields match
 	if restored.Tick != state.Tick {
@@ -103,7 +112,7 @@ func TestSaveFileRoundtrip(t *testing.T) {
 func TestSaveFileNodeEntities(t *testing.T) {
 	cfg := testConfig()
 	cfg.EventLogFile = ""
-	state := InitGame(&cfg)
+	state := mustInitGame(t, &cfg)
 
 	// Pick a node with entities
 	var nodeWithEntities uint64
@@ -126,7 +135,7 @@ func TestSaveFileNodeEntities(t *testing.T) {
 	if err := json.Unmarshal(data, &sf2); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	restored := FromSaveFile(&sf2)
+	restored := mustFromSaveFile(t, &sf2)
 
 	origNode := state.Network.GetNode(nodeWithEntities)
 	restoredNode := restored.Network.GetNode(nodeWithEntities)

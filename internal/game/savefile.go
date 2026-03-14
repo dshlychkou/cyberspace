@@ -1,11 +1,8 @@
 package game
 
 import (
-	crand "crypto/rand"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sort"
@@ -110,7 +107,7 @@ func (s *State) ToSaveFile() SaveFile {
 	return sf
 }
 
-func FromSaveFile(sf *SaveFile) *State {
+func FromSaveFile(sf *SaveFile) (*State, error) {
 	net := network.New()
 	for _, sn := range sf.Nodes {
 		node := &network.Node{
@@ -123,6 +120,11 @@ func FromSaveFile(sf *SaveFile) *State {
 	}
 	for _, e := range sf.Edges {
 		net.Connect(e.From, e.To)
+	}
+
+	rng, err := newGameRNG()
+	if err != nil {
+		return nil, err
 	}
 
 	s := &State{
@@ -140,6 +142,7 @@ func FromSaveFile(sf *SaveFile) *State {
 		Paused:       sf.Paused,
 		GameOver:     sf.GameOver,
 		Won:          sf.Won,
+		rng:          rng,
 	}
 
 	for _, p := range sf.Programs {
@@ -159,13 +162,6 @@ func FromSaveFile(sf *SaveFile) *State {
 		s.sched = scheduler.New()
 	}
 
-	// Fresh RNG
-	var seed [16]byte
-	_, _ = crand.Read(seed[:])
-	s1 := binary.LittleEndian.Uint64(seed[:8])
-	s2 := binary.LittleEndian.Uint64(seed[8:])
-	s.rng = rand.New(rand.NewPCG(s1, s2)) //nolint:gosec // seeded from crypto/rand
-
 	// Init event log if configured
 	if sf.Config.EventLogFile != "" {
 		if err := s.initEventLog(sf.Config.EventLogFile); err != nil {
@@ -173,7 +169,7 @@ func FromSaveFile(sf *SaveFile) *State {
 		}
 	}
 
-	return s
+	return s, nil
 }
 
 func ResolveSaveDir(configured string) (string, error) {
