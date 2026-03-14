@@ -20,9 +20,10 @@ task lint   # Run linter
 task sanity # ALWAYS run this after making changes
 
 ## Architecture
-- **Actor model**: GoActor[*game.State] processes TickCmd, TogglePauseCmd, SpawnProgramCmd, DeployVirusCmd, ShutdownCmd
-- **TUI screens**: screenMenu → screenGame / screenSettings / screenAbout (dispatch in app.go)
-- **Game engine deferred**: actor created only when Play is selected (startGame method)
+- **Actor model**: GoActor[*game.State] processes TickCmd, TogglePauseCmd, SpawnProgramCmd, DeployVirusCmd, SaveCmd, ShutdownCmd
+- **TUI screens**: screenMenu → screenGame / screenSettings / screenAbout / screenLoad (dispatch in app.go)
+- **Game engine deferred**: actor created only when Play/Load is selected (startGame/startEngineWithState methods)
+- **Save/Load**: ESC pauses game (keeps actor alive), menu shows Continue/Save when game in progress. Saves to JSON in configurable `SaveDir` (default `~/.cyberspace/saves`). Load screen lists saves by date, supports delete.
 - **Canvas renderer**: 2D cell grid in canvas.go, radial graph layout in graph_view.go
 - **Economy**: Data (vaults +5/prog/tick), Compute (relays +3/prog/tick), upkeep (-1 Data/prog), core hold (-2 Compute/prog)
 - **Event log file**: JSON event log via go-logslib, configured by `EventLogFile` (default `./lastgame.log`)
@@ -31,12 +32,14 @@ task sanity # ALWAYS run this after making changes
 
 ## Key Files
 - `cmd/cyberspace/main.go` - entry point, passes Config to tui.NewModel
-- `internal/game/config.go` - all game settings with defaults
-- `internal/game/engine.go` - tick logic, ICE spawning, economy, win/lose
+- `internal/game/config.go` - all game settings with defaults (all fields have json tags)
+- `internal/game/engine.go` - tick logic, ICE spawning, economy, win/lose, SaveCmd
 - `internal/game/state.go` - StateSnapshot with economy fields
-- `internal/tui/app.go` - Model, screen dispatch, Update/View, panel layout
+- `internal/game/savefile.go` - SaveFile struct, ToSaveFile/FromSaveFile, file I/O (ResolveSaveDir, WriteSaveFile, ReadSaveFile, ListSaveFiles)
+- `internal/tui/app.go` - Model, screen dispatch, Update/View, panel layout, save/load/continue game methods
 - `internal/tui/graph_view.go` - radial layout, canvas drawing, legend, flow animations
-- `internal/tui/menu.go` - main menu, settings (interactive), about screen
+- `internal/tui/menu.go` - dynamic menu (menuAction/menuItem types), settings (interactive), about screen
+- `internal/tui/load_screen.go` - load game screen (list saves, select, delete)
 - `internal/tui/sidebar.go` - right panel guide (nodes, entities, rules, economy)
 - `internal/tui/hud.go` - top bar (tick, counts, resources, threat bar)
 - `internal/tui/canvas.go` - 2D cell grid with line drawing

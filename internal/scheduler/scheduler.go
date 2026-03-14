@@ -39,3 +39,18 @@ func (s *Scheduler) DueEvents(currentTick int) []Event {
 func (s *Scheduler) Size() int {
 	return s.heap.Size()
 }
+
+func (s *Scheduler) PendingEvents() []Event {
+	return s.heap.ToSlice()
+}
+
+func Restore(events []Event) *Scheduler {
+	return &Scheduler{
+		heap: tree.HeapFromSlice(events, func(a, b Event) bool {
+			if a.Tick != b.Tick {
+				return a.Tick < b.Tick
+			}
+			return a.Priority < b.Priority
+		}),
+	}
+}

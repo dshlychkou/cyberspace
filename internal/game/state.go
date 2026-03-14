@@ -37,14 +37,14 @@ type State struct {
 }
 
 type Resources struct {
-	Data    int
-	Compute int
-	Cycles  int
+	Data    int `json:"data"`
+	Compute int `json:"compute"`
+	Cycles  int `json:"cycles"`
 }
 
 type Event struct {
-	Message string
-	Tick    int
+	Message string `json:"message"`
+	Tick    int    `json:"tick"`
 }
 
 type StateSnapshot struct {

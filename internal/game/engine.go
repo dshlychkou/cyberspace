@@ -389,6 +389,19 @@ func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
 }
 
+// SaveCmd serializes the current game state into a SaveFile. File I/O
+// happens in the TUI layer via the OnComplete callback, not inside the actor.
+type SaveCmd struct {
+	OnComplete func(SaveFile)
+}
+
+func (c *SaveCmd) Execute(_ context.Context, s *State) {
+	sf := s.ToSaveFile()
+	if c.OnComplete != nil {
+		c.OnComplete(sf)
+	}
+}
+
 // ShutdownCmd closes open resources such as the event log file.
 type ShutdownCmd struct{}
 

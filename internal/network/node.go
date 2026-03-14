@@ -53,10 +53,10 @@ func (t NodeType) Symbol() string {
 }
 
 type Node struct {
-	ID       uint64
-	Type     NodeType
-	Label    string
-	Entities []int // entity IDs present on this node
+	ID       uint64   `json:"id"`
+	Type     NodeType `json:"type"`
+	Label    string   `json:"label"`
+	Entities []int    `json:"entities"`
 }
 
 func NewNode(id uint64, nodeType NodeType) *Node {

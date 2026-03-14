@@ -8,7 +8,7 @@ const (
 
 type Program struct {
 	Entity
-	State ProgramState
+	State ProgramState `json:"state"`
 }
 
 func NewProgram(id int, nodeID uint64) *Program {

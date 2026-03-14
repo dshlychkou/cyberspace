@@ -56,7 +56,6 @@ func sidebarControls(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleSelected.Render("Spc") + " Pause / Resume\n")
 	sb.WriteString(styleSelected.Render("+/-") + " Speed up / down\n")
 	sb.WriteString(styleSelected.Render("Esc") + " Main menu\n")
-	sb.WriteString(styleSelected.Render("Q") + "   Quit\n")
 	sb.WriteByte('\n')
 }
 
