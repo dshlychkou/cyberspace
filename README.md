@@ -37,7 +37,7 @@ You control **programs** spreading through a network of nodes. Your goal is to g
 
 ### Win condition
 
-Get **3+ programs** onto the **CORE** node and **hold for 8 consecutive ticks**. The CORE doesn't allow auto-spread — you must manually spawn programs there with `S`.
+Get **4+ programs** onto the **CORE** node and **hold for 8 consecutive ticks**. The CORE doesn't allow auto-spread — you must manually spawn programs there with `S`.
 
 ### Lose condition
 
