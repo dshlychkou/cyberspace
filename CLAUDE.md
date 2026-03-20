@@ -26,7 +26,7 @@ task sanity # ALWAYS run this after making changes
 - **Save/Load**: ESC pauses game (keeps actor alive), menu shows Continue/Save when game in progress. Saves to JSON in configurable `SaveDir` (default `~/.cyberspace/saves`). Load screen lists saves by date, supports delete.
 - **Canvas renderer**: 2D cell grid in canvas.go, radial graph layout in graph_view.go
 - **Economy**: Data (vaults +5/prog/tick), Compute (relays +3/prog/tick), upkeep (-1 Data/prog), core hold (-2 Compute/prog)
-- **Event log file**: JSON event log via go-logslib, configured by `EventLogFile` (default `./lastgame.log`)
+- **Event log file**: JSON event log via go-logslib, configured by `EventLogFile` (default `./cyberspace.log`)
 - **Node selection**: `selectedNodeID uint64` (survives node destruction), spatial arrow nav + mouse click-to-select
 - **Node positions cached in Update**: `nodePositions []nodePos` + `graphOffset` computed on stateMsg/WindowSizeMsg, passed to renderGraph
 
