@@ -1,47 +1,47 @@
 version: '3'
 
 tasks:
-  update:
+  go-mod:
     desc: Tidy Go modules
     cmds:
       - go mod tidy
 
-  fmt:
+  go-fmt:
     desc: Format code
     cmds:
       - go fmt ./...
 
-  vet:
+  go-vet:
     desc: Run static analysis
     cmds:
       - go vet ./...
 
-  run:
+  go-run:
     desc: Build and run the game
     cmds:
       - go run ./cmd/cyberspace
 
-  build:
+  go-build:
     desc: Build the binary
     cmds:
       - go build -o bin/cyberspace ./cmd/cyberspace
 
-  test:
+  go-test:
     desc: Run tests
     cmds:
       - go test ./...
 
-  lint:
+  go-lint:
     desc: Run linter
     cmds:
-      - golangci-lint run ./...
+      - golangci-lint run --fix ./...
 
   sanity:
     desc: Run all checks (fmt, build, test, vet)
     deps:
-      - update
-      - fmt
-      - vet
-      - lint
-      - test
-      - build
+      - go-mod
+      - go-fmt
+      - go-vet
+      - go-lint
+      - go-test
+      - go-build
