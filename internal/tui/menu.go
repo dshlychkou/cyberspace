@@ -21,6 +21,13 @@ const (
 	menuAbout
 )
 
+const (
+	labelNewGame  = "New Game"
+	labelLoad     = "Load"
+	labelSettings = "Settings"
+	labelAbout    = "About"
+)
+
 type menuItem struct {
 	Label  string
 	Action menuAction
@@ -31,17 +38,17 @@ func (m *Model) menuItems() []menuItem {
 		return []menuItem{
 			{"Continue", menuContinue},
 			{"Save", menuSave},
-			{"New Game", menuNewGame},
-			{"Load", menuLoad},
-			{"Settings", menuSettings},
-			{"About", menuAbout},
+			{labelNewGame, menuNewGame},
+			{labelLoad, menuLoad},
+			{labelSettings, menuSettings},
+			{labelAbout, menuAbout},
 		}
 	}
 	return []menuItem{
-		{"New Game", menuNewGame},
-		{"Load", menuLoad},
-		{"Settings", menuSettings},
-		{"About", menuAbout},
+		{labelNewGame, menuNewGame},
+		{labelLoad, menuLoad},
+		{labelSettings, menuSettings},
+		{labelAbout, menuAbout},
 	}
 }
 

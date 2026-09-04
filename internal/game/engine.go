@@ -122,6 +122,10 @@ func (s *State) applyRules() {
 // computed from a pre-death snapshot so messages are accurate even when
 // multiple entities on the same node die in the same tick.
 func (s *State) applyDeaths(deaths []int) {
+	if len(deaths) == 0 {
+		return
+	}
+
 	// Pre-compute per-node counts from the snapshot (before any removals)
 	nodePrograms := make(map[uint64]int)
 	nodeICE := make(map[uint64]int)
@@ -305,8 +309,7 @@ func (s *State) checkEndConditions() {
 		s.CoreHoldLen = 0
 	}
 
-	const gracePeriod = 5 // don't end the game during initial setup ticks
-	if len(s.Programs) == 0 && s.Tick > gracePeriod {
+	if len(s.Programs) == 0 && s.Tick > s.Config.GracePeriod {
 		s.GameOver = true
 		s.Won = false
 		s.AddEvent("All programs destroyed. Game over.")

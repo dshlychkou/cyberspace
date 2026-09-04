@@ -25,6 +25,7 @@ type Config struct {
 	ICESpawnMinInterval int           `name:"ice_spawn_min_interval" default:"8" usage:"fastest ICE spawn interval (tick floor)" json:"ice_spawn_min_interval"`
 	ICEEscalationTick   int           `name:"ice_escalation_tick" default:"80" usage:"tick when ICE escalation starts" json:"ice_escalation_tick"`
 	ICEEscalationRate   int           `name:"ice_escalation_rate" default:"50" usage:"ticks between ICE escalation bursts" json:"ice_escalation_rate"`
+	GracePeriod         int           `name:"grace_period" default:"5" usage:"ticks before all-programs-destroyed can end the game" json:"grace_period"`
 	EventLogSize        int           `name:"event_log_size" default:"20" usage:"events shown in snapshot" json:"event_log_size"`
 	EventLogFile        string        `name:"event_log_file" default:"./cyberspace.log" usage:"file path to write event log" json:"event_log_file"`
 	SaveDir             string        `name:"save_dir" default:"" usage:"directory for save files (default fallback path ~/.cyberspace/saves)" json:"save_dir"`

@@ -60,27 +60,31 @@ type Event struct {
 }
 
 type StateSnapshot struct {
-	Resources        Resources
-	Programs         []ProgramSnapshot
-	ICEs             []ICESnapshot
-	Viruses          []VirusSnapshot
-	Nodes            map[uint64]NodeSnapshot
-	Edges            []EdgeSnapshot
-	Events           []Event
-	Tick             int
-	Score            int
-	CoreHoldLen      int
-	CoreWinThreshold int
-	CoreWinDuration  int
-	ProgramSpawnCost int
-	VirusDeployCost  int
-	DataIncome       int
-	DataBurn         int
-	ComputeIncome    int
-	ComputeBurn      int
-	Paused           bool
-	GameOver         bool
-	Won              bool
+	Resources          Resources
+	Programs           []ProgramSnapshot
+	ICEs               []ICESnapshot
+	Viruses            []VirusSnapshot
+	Nodes              map[uint64]NodeSnapshot
+	Edges              []EdgeSnapshot
+	Events             []Event
+	Tick               int
+	Score              int
+	CoreHoldLen        int
+	CoreWinThreshold   int
+	CoreWinDuration    int
+	ProgramSpawnCost   int
+	VirusDeployCost    int
+	DataHarvestRate    int
+	ComputeHarvestRate int
+	ProgramUpkeep      int
+	CoreHoldCost       int
+	DataIncome         int
+	DataBurn           int
+	ComputeIncome      int
+	ComputeBurn        int
+	Paused             bool
+	GameOver           bool
+	Won                bool
 }
 
 type ProgramSnapshot struct {
@@ -287,23 +291,27 @@ func (s *State) CloseEventLog() {
 
 func (s *State) Snapshot() StateSnapshot {
 	snap := StateSnapshot{
-		Tick:             s.Tick,
-		Paused:           s.Paused,
-		GameOver:         s.GameOver,
-		Won:              s.Won,
-		Resources:        s.Resources,
-		Score:            s.Score,
-		CoreHoldLen:      s.CoreHoldLen,
-		CoreWinThreshold: s.Config.CoreWinThreshold,
-		CoreWinDuration:  s.Config.CoreWinDuration,
-		ProgramSpawnCost: s.Config.ProgramSpawnCost,
-		VirusDeployCost:  s.Config.VirusDeployCost,
-		Programs:         s.snapshotPrograms(),
-		ICEs:             s.snapshotICEs(),
-		Viruses:          s.snapshotViruses(),
-		Nodes:            s.snapshotNodes(),
-		Edges:            s.snapshotEdges(),
-		Events:           s.snapshotEvents(),
+		Tick:               s.Tick,
+		Paused:             s.Paused,
+		GameOver:           s.GameOver,
+		Won:                s.Won,
+		Resources:          s.Resources,
+		Score:              s.Score,
+		CoreHoldLen:        s.CoreHoldLen,
+		CoreWinThreshold:   s.Config.CoreWinThreshold,
+		CoreWinDuration:    s.Config.CoreWinDuration,
+		ProgramSpawnCost:   s.Config.ProgramSpawnCost,
+		VirusDeployCost:    s.Config.VirusDeployCost,
+		DataHarvestRate:    s.Config.DataHarvestRate,
+		ComputeHarvestRate: s.Config.ComputeHarvestRate,
+		ProgramUpkeep:      s.Config.ProgramUpkeep,
+		CoreHoldCost:       s.Config.CoreHoldCost,
+		Programs:           s.snapshotPrograms(),
+		ICEs:               s.snapshotICEs(),
+		Viruses:            s.snapshotViruses(),
+		Nodes:              s.snapshotNodes(),
+		Edges:              s.snapshotEdges(),
+		Events:             s.snapshotEvents(),
 	}
 	s.computeEconomyRates(&snap)
 	return snap
@@ -347,13 +355,10 @@ func (s *State) snapshotNodes() map[uint64]NodeSnapshot {
 }
 
 func (s *State) snapshotEdges() []EdgeSnapshot {
-	out := make([]EdgeSnapshot, 0)
-	for _, nodeID := range s.Network.NodeIDs() {
-		for _, neighborID := range s.Network.Neighbors(nodeID) {
-			if nodeID < neighborID {
-				out = append(out, EdgeSnapshot{From: nodeID, To: neighborID})
-			}
-		}
+	edges := s.Network.Edges()
+	out := make([]EdgeSnapshot, len(edges))
+	for i, e := range edges {
+		out[i] = EdgeSnapshot{From: e.From, To: e.To}
 	}
 	return out
 }
@@ -379,11 +384,6 @@ func (s *State) computeEconomyRates(snap *StateSnapshot) {
 		}
 	}
 	snap.DataBurn = len(s.Programs) * s.Config.ProgramUpkeep
-	for _, core := range s.Network.NodesByType(network.NodeCore) {
-		for _, eid := range core.Entities {
-			if _, ok := s.Programs[eid]; ok {
-				snap.ComputeBurn += s.Config.CoreHoldCost
-			}
-		}
-	}
+	programsOnCore := s.countProgramsOnCore(s.Network.NodesByType(network.NodeCore))
+	snap.ComputeBurn = programsOnCore * s.Config.CoreHoldCost
 }

@@ -79,13 +79,9 @@ func (s *State) ToSaveFile() SaveFile {
 	}
 	sort.Slice(sf.Nodes, func(i, j int) bool { return sf.Nodes[i].ID < sf.Nodes[j].ID })
 
-	// Edges (deduped: from < to)
-	for _, nodeID := range s.Network.NodeIDs() {
-		for _, neighborID := range s.Network.Neighbors(nodeID) {
-			if nodeID < neighborID {
-				sf.Edges = append(sf.Edges, SaveEdge{From: nodeID, To: neighborID})
-			}
-		}
+	// Edges
+	for _, e := range s.Network.Edges() {
+		sf.Edges = append(sf.Edges, SaveEdge{From: e.From, To: e.To})
 	}
 
 	// Entities

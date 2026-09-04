@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -62,6 +62,15 @@ type Model struct {
 	metrics        *middleware.Metrics
 	saveFiles      []game.SaveFileInfo
 	loadIdx        int
+}
+
+func sortedNodeIDs[T any](nodes map[uint64]T) []uint64 {
+	ids := make([]uint64, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 type StateProvider struct {
@@ -187,11 +196,7 @@ func (m *Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateMsg:
 		m.state = game.StateSnapshot(msg)
-		nodeIDs := make([]uint64, 0, len(m.state.Nodes))
-		for id := range m.state.Nodes {
-			nodeIDs = append(nodeIDs, id)
-		}
-		sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
+		nodeIDs := sortedNodeIDs(m.state.Nodes)
 		m.nodeIDs = nodeIDs
 		// Validate selectedNodeID still exists; fallback to first node
 		if _, ok := m.state.Nodes[m.selectedNodeID]; !ok && len(nodeIDs) > 0 {
@@ -376,11 +381,7 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 
 	snap := gameState.Snapshot()
 
-	nodeIDs := make([]uint64, 0, len(snap.Nodes))
-	for id := range snap.Nodes {
-		nodeIDs = append(nodeIDs, id)
-	}
-	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
+	nodeIDs := sortedNodeIDs(snap.Nodes)
 
 	m.state = snap
 	m.engineRef = engineActor
@@ -484,37 +485,24 @@ func (m *Model) renderGame() string {
 			styleError.Render("Terminal too small. Need at least 60x20."))
 	}
 
-	sidebarWidth := min(28, m.width/3)
-	mainWidth := m.width - sidebarWidth - 2
-
-	// Panel borders + padding consume 4 cols (border 2 + padding 2) and 2 rows (border top+bottom)
-	innerWidth := mainWidth - 4
-	panelHeight := m.height - 2 // leave room for status bar
-	innerHeight := panelHeight - 2
+	d := m.panelDimensions()
 
 	// HUD
-	hud := renderHUD(&m.state, innerWidth)
+	hud := renderHUD(&m.state, d.innerWidth)
 
-	// Vertical budget: HUD(1) + graph + details(3) + eventlog(eventHeight)
-	detailHeight := 3
-	eventHeight := 6
-	graphHeight := innerHeight - 1 - detailHeight - eventHeight
-	if graphHeight < 8 {
-		graphHeight = 8
-	}
-	graph := renderGraph(&m.state, m.selectedNodeID, m.nodePositions, innerWidth, graphHeight)
+	graph := renderGraph(&m.state, m.selectedNodeID, m.nodePositions, d.innerWidth, d.graphHeight)
 
 	// Selected node details
 	details := renderSelectedDetails(&m.state, m.selectedNodeID)
 
 	// Event log
-	eventLog := renderEventLog(m.state.Events, eventHeight)
+	eventLog := renderEventLog(m.state.Events, d.eventHeight)
 
 	// Sidebar (guide) — constrain to panel inner height
-	sidebar := renderSidebar(&m.state, sidebarWidth-4)
+	sidebar := renderSidebar(&m.state, d.sidebarWidth-4)
 
 	// Compose left panel with explicit height to match terminal
-	leftPanel := stylePanel.Width(mainWidth).Height(innerHeight).Render(
+	leftPanel := stylePanel.Width(d.mainWidth).Height(d.innerHeight).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			hud,
 			graph,
@@ -524,7 +512,7 @@ func (m *Model) renderGame() string {
 	)
 
 	// Compose right panel with matching height
-	rightPanel := stylePanel.Width(sidebarWidth).Height(innerHeight).Render(sidebar)
+	rightPanel := stylePanel.Width(d.sidebarWidth).Height(d.innerHeight).Render(sidebar)
 
 	// Join horizontally
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
@@ -568,28 +556,19 @@ func (m *Model) sendTogglePause() tea.Cmd {
 	}
 }
 
-type completionCmd interface {
-	actor.Executable[*game.State]
-}
-
-func newCompletionCmd(nodeID uint64, done chan string, spawn bool) completionCmd {
-	onComplete := func(ok bool, msg string) {
-		if !ok {
-			done <- msg
-		} else {
-			done <- ""
-		}
-	}
-	if spawn {
-		return &game.SpawnProgramCmd{NodeID: nodeID, OnComplete: onComplete}
-	}
-	return &game.DeployVirusCmd{NodeID: nodeID, OnComplete: onComplete}
-}
-
-func (m *Model) sendEntityCmd(nodeID uint64, spawn bool, errPrefix string) tea.Cmd {
+// sendCmd builds an entity command via build (wiring its OnComplete to an
+// internal channel) and delivers it to the engine, translating the result
+// into a tea.Msg.
+func (m *Model) sendCmd(build func(onComplete func(bool, string)) actor.Executable[*game.State], errPrefix string) tea.Cmd {
 	return func() tea.Msg {
 		done := make(chan string, 1)
-		cmd := newCompletionCmd(nodeID, done, spawn)
+		cmd := build(func(ok bool, msg string) {
+			if !ok {
+				done <- msg
+			} else {
+				done <- ""
+			}
+		})
 		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
 			return errorMsg(fmt.Sprintf("%s error: %v", errPrefix, err))
 		}
@@ -606,28 +585,56 @@ func (m *Model) sendEntityCmd(nodeID uint64, spawn bool, errPrefix string) tea.C
 }
 
 func (m *Model) sendSpawnProgram(nodeID uint64) tea.Cmd {
-	return m.sendEntityCmd(nodeID, true, "spawn")
+	return m.sendCmd(func(oc func(bool, string)) actor.Executable[*game.State] {
+		return &game.SpawnProgramCmd{NodeID: nodeID, OnComplete: oc}
+	}, "spawn")
 }
 
 func (m *Model) sendDeployVirus(nodeID uint64) tea.Cmd {
-	return m.sendEntityCmd(nodeID, false, "deploy")
+	return m.sendCmd(func(oc func(bool, string)) actor.Executable[*game.State] {
+		return &game.DeployVirusCmd{NodeID: nodeID, OnComplete: oc}
+	}, "deploy")
+}
+
+// panelDims holds the panel/graph layout measurements shared by renderGame
+// (the View path) and hitTestNode/computeNodePositions (the input path), so
+// the two stay in sync.
+type panelDims struct {
+	sidebarWidth int
+	mainWidth    int
+	innerWidth   int
+	innerHeight  int
+	graphHeight  int
+	eventHeight  int
+}
+
+func (m *Model) panelDimensions() panelDims {
+	sidebarWidth := min(28, m.width/3)
+	mainWidth := m.width - sidebarWidth - 2
+
+	// Panel borders + padding consume 4 cols (border 2 + padding 2) and 2 rows (border top+bottom)
+	innerWidth := mainWidth - 4
+	panelHeight := m.height - 2 // leave room for status bar
+	innerHeight := panelHeight - 2
+
+	// Vertical budget: HUD(1) + graph + details(3) + eventlog(eventHeight)
+	const detailHeight = 3
+	const eventHeight = 6
+	graphHeight := max(innerHeight-1-detailHeight-eventHeight, 8)
+
+	return panelDims{
+		sidebarWidth: sidebarWidth,
+		mainWidth:    mainWidth,
+		innerWidth:   innerWidth,
+		innerHeight:  innerHeight,
+		graphHeight:  graphHeight,
+		eventHeight:  eventHeight,
+	}
 }
 
 func (m *Model) graphDimensions() (graphWidth, graphHeight int) {
-	sidebarWidth := min(28, m.width/3)
-	mainWidth := m.width - sidebarWidth - 2
-	innerWidth := mainWidth - 4
-	panelHeight := m.height - 2
-	innerHeight := panelHeight - 2
-
-	graphWidth = innerWidth
-	detailHeight := 3
-	eventHeight := 6
-	graphHeight = innerHeight - 1 - detailHeight - eventHeight
-	if graphHeight < 8 {
-		graphHeight = 8
-	}
-	return
+	d := m.panelDimensions()
+	return d.innerWidth, d.graphHeight
 }
 
 func (m *Model) computeNodePositions() {

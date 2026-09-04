@@ -62,7 +62,7 @@ func renderHUD(snap *game.StateSnapshot, width int) string {
 	threatBar := renderThreatBar(threatPct)
 	right := fmt.Sprintf("Threat:%s%d%%", threatBar, threatPct)
 
-	gap := width - len(stripAnsi(left)) - len(stripAnsi(right))
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
@@ -120,23 +120,4 @@ func renderThreatBar(pct int) string {
 		}
 	}
 	return bar.String()
-}
-
-func stripAnsi(s string) string {
-	result := make([]byte, 0, len(s))
-	inEscape := false
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		result = append(result, s[i])
-	}
-	return string(result)
 }

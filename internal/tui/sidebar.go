@@ -12,10 +12,10 @@ func renderSidebar(snap *game.StateSnapshot, _ int) string {
 	sidebarObjective(&sb, snap)
 	sidebarResources(&sb, snap)
 	sidebarControls(&sb, snap)
-	sidebarNodeTypes(&sb)
+	sidebarNodeTypes(&sb, snap)
 	sidebarEntities(&sb)
 	sidebarRules(&sb)
-	sidebarEconomy(&sb)
+	sidebarEconomy(&sb, snap)
 	return sb.String()
 }
 
@@ -59,15 +59,15 @@ func sidebarControls(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteByte('\n')
 }
 
-func sidebarNodeTypes(sb *strings.Builder) {
+func sidebarNodeTypes(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleTitle.Render("NODES"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleProgram.Render("◆S"))
 	sb.WriteString("rv  Auto-spread hub\n")
 	sb.WriteString(styleData.Render("◆V"))
-	sb.WriteString("lt  +5 Data/prog/tick\n")
+	fmt.Fprintf(sb, "lt  +%d Data/prog/tick\n", snap.DataHarvestRate)
 	sb.WriteString(styleEvent.Render("◇R"))
-	sb.WriteString("ly  +2 Compute/prog/tick\n")
+	fmt.Fprintf(sb, "ly  +%d Compute/prog/tick\n", snap.ComputeHarvestRate)
 	sb.WriteString(styleFirewall.Render("◆F"))
 	sb.WriteString("W   Blocks spread, ICE\n")
 	sb.WriteString(styleCore.Render("★C"))
@@ -100,36 +100,41 @@ func sidebarRules(sb *strings.Builder) {
 	sb.WriteByte('\n')
 }
 
-func sidebarEconomy(sb *strings.Builder) {
+func sidebarEconomy(sb *strings.Builder, snap *game.StateSnapshot) {
 	sb.WriteString(styleTitle.Render("ECONOMY"))
 	sb.WriteByte('\n')
 	sb.WriteString(styleScore.Render("+"))
-	sb.WriteString(" Vault: +5 Data/prog\n")
+	fmt.Fprintf(sb, " Vault: +%d Data/prog\n", snap.DataHarvestRate)
 	sb.WriteString(styleScore.Render("+"))
-	sb.WriteString(" Relay: +2 Compute/prog\n")
+	fmt.Fprintf(sb, " Relay: +%d Compute/prog\n", snap.ComputeHarvestRate)
 	sb.WriteString(styleError.Render("-"))
-	sb.WriteString(" Upkeep: -1 Data/prog\n")
+	fmt.Fprintf(sb, " Upkeep: -%d Data/prog\n", snap.ProgramUpkeep)
 	sb.WriteString(styleError.Render("-"))
-	sb.WriteString(" CORE:   -3 Compute/prog\n")
+	fmt.Fprintf(sb, " CORE:   -%d Compute/prog\n", snap.CoreHoldCost)
 	sb.WriteString(styleEvent.Render("Bankrupt = death!\n"))
 }
 
 func countEntities(n game.NodeSnapshot, snap *game.StateSnapshot) (programs, ices, viruses int) {
+	programByID := make(map[int]bool, len(snap.Programs))
+	for _, p := range snap.Programs {
+		programByID[p.ID] = true
+	}
+	iceByID := make(map[int]bool, len(snap.ICEs))
+	for _, ice := range snap.ICEs {
+		iceByID[ice.ID] = true
+	}
+	virusByID := make(map[int]bool, len(snap.Viruses))
+	for _, v := range snap.Viruses {
+		virusByID[v.ID] = true
+	}
 	for _, eid := range n.Entities {
-		for _, p := range snap.Programs {
-			if p.ID == eid {
-				programs++
-			}
-		}
-		for _, ice := range snap.ICEs {
-			if ice.ID == eid {
-				ices++
-			}
-		}
-		for _, v := range snap.Viruses {
-			if v.ID == eid {
-				viruses++
-			}
+		switch {
+		case programByID[eid]:
+			programs++
+		case iceByID[eid]:
+			ices++
+		case virusByID[eid]:
+			viruses++
 		}
 	}
 	return
