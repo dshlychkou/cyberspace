@@ -65,3 +65,22 @@ func (n *Network) NodesByType(t NodeType) []*Node {
 	}
 	return nodes
 }
+
+// Edge is an undirected connection between two nodes, deduped so From < To.
+type Edge struct {
+	From uint64
+	To   uint64
+}
+
+// Edges returns every undirected edge in the network exactly once.
+func (n *Network) Edges() []Edge {
+	var edges []Edge
+	for _, nodeID := range n.NodeIDs() {
+		for _, neighborID := range n.Neighbors(nodeID) {
+			if nodeID < neighborID {
+				edges = append(edges, Edge{From: nodeID, To: neighborID})
+			}
+		}
+	}
+	return edges
+}

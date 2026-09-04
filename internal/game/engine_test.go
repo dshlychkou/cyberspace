@@ -35,6 +35,7 @@ func testConfig() Config {
 		ICESpawnMinInterval: 8,
 		ICEEscalationTick:   999,
 		ICEEscalationRate:   50,
+		GracePeriod:         5,
 	}
 }
 

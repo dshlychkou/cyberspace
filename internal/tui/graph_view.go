@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/dshlychkou/cyberspace/internal/game"
@@ -34,10 +34,10 @@ func layoutNodes(snap *game.StateSnapshot, w, h int) []nodePos {
 			outerIDs = append(outerIDs, id)
 		}
 	}
-	sort.Slice(coreIDs, func(i, j int) bool { return coreIDs[i] < coreIDs[j] })
-	sort.Slice(fwIDs, func(i, j int) bool { return fwIDs[i] < fwIDs[j] })
-	sort.Slice(srvIDs, func(i, j int) bool { return srvIDs[i] < srvIDs[j] })
-	sort.Slice(outerIDs, func(i, j int) bool { return outerIDs[i] < outerIDs[j] })
+	slices.Sort(coreIDs)
+	slices.Sort(fwIDs)
+	slices.Sort(srvIDs)
+	slices.Sort(outerIDs)
 
 	// Compute max radius that stays within bounds after aspect-ratio scaling.
 	// Generous margins to account for label width (~8 chars) and entity tags below nodes.
@@ -373,12 +373,12 @@ func nodeHint(n game.NodeSnapshot, programs, ices int, snap *game.StateSnapshot)
 		return "Target node! Select and press S to place a program."
 	case network.NodeVault:
 		if programs > 0 {
-			return fmt.Sprintf("+%d Data/tick from %d program(s).", programs*5, programs)
+			return fmt.Sprintf("+%d Data/tick from %d program(s).", programs*snap.DataHarvestRate, programs)
 		}
 		return "Programs here earn Data each tick."
 	case network.NodeRelay:
 		if programs > 0 {
-			return fmt.Sprintf("+%d Compute/tick from %d program(s).", programs*2, programs)
+			return fmt.Sprintf("+%d Compute/tick from %d program(s).", programs*snap.ComputeHarvestRate, programs)
 		}
 		return "Programs here earn Compute each tick."
 	default:
@@ -512,7 +512,7 @@ func findNeighbors(nodeID uint64, snap *game.StateSnapshot) []string {
 	for id := range adj {
 		nids = append(nids, id)
 	}
-	sort.Slice(nids, func(i, j int) bool { return nids[i] < nids[j] })
+	slices.Sort(nids)
 
 	var names []string
 	for _, nid := range nids {

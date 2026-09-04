@@ -1,6 +1,9 @@
 package network
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 const (
 	symbolFilledDiamond = "\u25c6" // ◆
@@ -69,12 +72,7 @@ func NewNode(id uint64, nodeType NodeType) *Node {
 }
 
 func (n *Node) HasEntity(entityID int) bool {
-	for _, eid := range n.Entities {
-		if eid == entityID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(n.Entities, entityID)
 }
 
 func (n *Node) AddEntity(entityID int) {
