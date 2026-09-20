@@ -63,7 +63,11 @@ func (s *State) spawnScheduledICE() {
 		s.AddICE(target.ID)
 		s.AddEvent(fmt.Sprintf("New ICE spawned at %s", target.Label))
 	}
-	interval := max(s.Config.ICESpawnMinInterval, s.Config.ICESpawnTick-s.Tick/s.Config.ICESpawnTick)
+	intervalBase := s.Config.ICESpawnTick
+	if intervalBase < 1 {
+		intervalBase = 1
+	}
+	interval := max(s.Config.ICESpawnMinInterval, intervalBase-s.Tick/intervalBase)
 	s.sched.Schedule(scheduler.Event{
 		Tick:     s.Tick + interval,
 		Priority: 1,
@@ -95,7 +99,11 @@ func (s *State) ageViruses() {
 		v.Tick()
 		if !v.Alive {
 			node := s.Network.GetNode(v.NodeID)
-			s.AddEvent(fmt.Sprintf("Virus expired at %s (lifespan ended)", node.Label))
+			if node != nil {
+				s.AddEvent(fmt.Sprintf("Virus expired at %s (lifespan ended)", node.Label))
+			} else {
+				s.AddEvent(fmt.Sprintf("Virus expired (node %d missing)", v.NodeID))
+			}
 			s.RemoveEntity(id)
 		}
 	}
@@ -336,6 +344,12 @@ func spawnEntity(
 	resourceName string, place func(uint64), eventMsg string,
 	onComplete func(bool, string),
 ) {
+	if s.GameOver {
+		if onComplete != nil {
+			onComplete(false, "Game over — cannot deploy")
+		}
+		return
+	}
 	if *resource < cost {
 		if onComplete != nil {
 			onComplete(false, fmt.Sprintf("Not enough %s (need %d, have %d)", resourceName, cost, *resource))
