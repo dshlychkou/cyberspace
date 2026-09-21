@@ -610,3 +610,84 @@ func TestInitGameSurvives20Ticks(t *testing.T) {
 	}
 	t.Logf("%d/%d games survived 20 ticks without player input", survivals, runs)
 }
+
+func TestSpawnProgramCmdRejectsGameOver(t *testing.T) {
+	cfg := testConfig()
+	state := mustInitGame(t, &cfg)
+	state.GameOver = true
+	state.Won = false
+
+	var nodeID uint64
+	for id := range state.Network.Nodes {
+		nodeID = id
+		break
+	}
+	before := len(state.Programs)
+	dataBefore := state.Resources.Data
+
+	var okResult bool
+	var msgResult string
+	(&SpawnProgramCmd{
+		NodeID: nodeID,
+		OnComplete: func(ok bool, msg string) {
+			okResult = ok
+			msgResult = msg
+		},
+	}).Execute(context.Background(), state)
+
+	if okResult {
+		t.Fatal("expected spawn to fail after game over")
+	}
+	if msgResult == "" {
+		t.Fatal("expected failure message")
+	}
+	if len(state.Programs) != before {
+		t.Errorf("programs changed after game over spawn: %d → %d", before, len(state.Programs))
+	}
+	if state.Resources.Data != dataBefore {
+		t.Errorf("data deducted after game over spawn: %d → %d", dataBefore, state.Resources.Data)
+	}
+}
+
+func TestDeployVirusCmdRejectsGameOver(t *testing.T) {
+	cfg := testConfig()
+	state := mustInitGame(t, &cfg)
+	state.GameOver = true
+	state.Won = false
+
+	var nodeID uint64
+	for id := range state.Network.Nodes {
+		nodeID = id
+		break
+	}
+	before := len(state.Viruses)
+	computeBefore := state.Resources.Compute
+
+	var okResult bool
+	(&DeployVirusCmd{
+		NodeID: nodeID,
+		OnComplete: func(ok bool, msg string) {
+			okResult = ok
+		},
+	}).Execute(context.Background(), state)
+
+	if okResult {
+		t.Fatal("expected deploy to fail after game over")
+	}
+	if len(state.Viruses) != before {
+		t.Errorf("viruses changed after game over deploy: %d → %d", before, len(state.Viruses))
+	}
+	if state.Resources.Compute != computeBefore {
+		t.Errorf("compute deducted after game over deploy: %d → %d", computeBefore, state.Resources.Compute)
+	}
+}
+
+func TestSpawnScheduledICEZeroICESpawnTick(t *testing.T) {
+	cfg := testConfig()
+	cfg.ICESpawnTick = 0
+	state := mustInitGame(t, &cfg)
+	state.Tick = 10
+
+	// Must not panic on divide-by-zero when rescheduling.
+	state.spawnScheduledICE()
+}

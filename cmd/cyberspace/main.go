@@ -25,18 +25,15 @@ func main() {
 	model := tui.NewModel(ctx, cfg)
 	p := tea.NewProgram(model)
 
-	doneChan := make(chan struct{})
 	go func() {
-		defer close(doneChan)
 		<-ctx.Done()
-		stop()
-	}()
-	go func() {
-		<-doneChan
 		p.Quit()
 	}()
 
-	if _, err := p.Run(); err != nil {
+	_, err := p.Run()
+	stop()
+	model.Shutdown()
+	if err != nil {
 		log.Fatalf("Error running game: %v", err)
 	}
 }

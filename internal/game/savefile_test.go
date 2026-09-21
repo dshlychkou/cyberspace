@@ -3,6 +3,8 @@ package game
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/dshlychkou/cyberspace/internal/entity"
 )
 
 func mustFromSaveFile(t *testing.T, sf *SaveFile) *State {
@@ -145,5 +147,63 @@ func TestSaveFileNodeEntities(t *testing.T) {
 	if len(restoredNode.Entities) != len(origNode.Entities) {
 		t.Errorf("node %d entities: want %d, got %d",
 			nodeWithEntities, len(origNode.Entities), len(restoredNode.Entities))
+	}
+}
+
+func TestToSaveFileDeepCopiesEntities(t *testing.T) {
+	cfg := testConfig()
+	cfg.EventLogFile = ""
+	state := mustInitGame(t, &cfg)
+
+	var progID int
+	for id := range state.Programs {
+		progID = id
+		break
+	}
+	origNodeID := state.Programs[progID].NodeID
+
+	sf := state.ToSaveFile()
+	var saved *entity.Program
+	for _, p := range sf.Programs {
+		if p.ID == progID {
+			saved = p
+			break
+		}
+	}
+	if saved == nil {
+		t.Fatalf("program %d missing from save file", progID)
+	}
+
+	state.Programs[progID].NodeID = origNodeID + 999
+	if saved.NodeID != origNodeID {
+		t.Errorf("save file program mutated with live state: want node %d, got %d",
+			origNodeID, saved.NodeID)
+	}
+}
+
+func TestFromSaveFileRejectsNilProgram(t *testing.T) {
+	cfg := testConfig()
+	cfg.EventLogFile = ""
+	state := mustInitGame(t, &cfg)
+	sf := state.ToSaveFile()
+	sf.Programs = append(sf.Programs, nil)
+
+	if _, err := FromSaveFile(&sf); err == nil {
+		t.Fatal("expected error for nil program entry")
+	}
+}
+
+func TestFromSaveFileRejectsUnknownNodeID(t *testing.T) {
+	cfg := testConfig()
+	cfg.EventLogFile = ""
+	state := mustInitGame(t, &cfg)
+	sf := state.ToSaveFile()
+	if len(sf.Programs) == 0 {
+		t.Fatal("expected at least one program in save")
+	}
+	sf.Programs[0].NodeID = 999999999
+
+	if _, err := FromSaveFile(&sf); err == nil {
+		t.Fatal("expected error for program with unknown node ID")
 	}
 }

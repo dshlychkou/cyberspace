@@ -250,12 +250,12 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.sendTogglePause()
 		return m, cmd
 	case "s":
-		if m.selectedNodeID != 0 {
+		if m.selectedNodeID != 0 && !m.state.GameOver {
 			cmd := m.sendSpawnProgram(m.selectedNodeID)
 			return m, cmd
 		}
 	case "v":
-		if m.selectedNodeID != 0 {
+		if m.selectedNodeID != 0 && !m.state.GameOver {
 			cmd := m.sendDeployVirus(m.selectedNodeID)
 			return m, cmd
 		}
@@ -398,14 +398,20 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 }
 
 func (m *Model) saveGame() tea.Cmd {
+	engine := m.engineRef
+	ctx := m.ctx
+	saveDir := m.cfg.SaveDir
 	return func() tea.Msg {
+		if engine == nil {
+			return errorMsg("save error: engine not running")
+		}
 		done := make(chan game.SaveFile, 1)
 		cmd := &game.SaveCmd{
 			OnComplete: func(sf game.SaveFile) {
 				done <- sf
 			},
 		}
-		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
+		if err := engine.Receive(ctx, cmd); err != nil {
 			return errorMsg(fmt.Sprintf("save error: %v", err))
 		}
 
@@ -416,7 +422,7 @@ func (m *Model) saveGame() tea.Cmd {
 			return errorMsg("save timeout")
 		}
 
-		dir, err := game.ResolveSaveDir(m.cfg.SaveDir)
+		dir, err := game.ResolveSaveDir(saveDir)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("save dir error: %v", err))
 		}
@@ -527,14 +533,19 @@ func (m *Model) renderGame() string {
 }
 
 func (m *Model) sendTick() tea.Cmd {
+	engine := m.engineRef
+	ctx := m.ctx
 	return func() tea.Msg {
+		if engine == nil {
+			return errorMsg("tick error: engine not running")
+		}
 		done := make(chan game.StateSnapshot, 1)
 		cmd := &game.TickCmd{
 			OnComplete: func(snap game.StateSnapshot) {
 				done <- snap
 			},
 		}
-		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
+		if err := engine.Receive(ctx, cmd); err != nil {
 			return errorMsg(fmt.Sprintf("tick error: %v", err))
 		}
 		select {
@@ -547,9 +558,14 @@ func (m *Model) sendTick() tea.Cmd {
 }
 
 func (m *Model) sendTogglePause() tea.Cmd {
+	engine := m.engineRef
+	ctx := m.ctx
 	return func() tea.Msg {
+		if engine == nil {
+			return errorMsg("pause error: engine not running")
+		}
 		cmd := &game.TogglePauseCmd{}
-		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
+		if err := engine.Receive(ctx, cmd); err != nil {
 			return errorMsg(fmt.Sprintf("pause error: %v", err))
 		}
 		return nil
@@ -560,7 +576,12 @@ func (m *Model) sendTogglePause() tea.Cmd {
 // internal channel) and delivers it to the engine, translating the result
 // into a tea.Msg.
 func (m *Model) sendCmd(build func(onComplete func(bool, string)) actor.Executable[*game.State], errPrefix string) tea.Cmd {
+	engine := m.engineRef
+	ctx := m.ctx
 	return func() tea.Msg {
+		if engine == nil {
+			return errorMsg(fmt.Sprintf("%s error: engine not running", errPrefix))
+		}
 		done := make(chan string, 1)
 		cmd := build(func(ok bool, msg string) {
 			if !ok {
@@ -569,7 +590,7 @@ func (m *Model) sendCmd(build func(onComplete func(bool, string)) actor.Executab
 				done <- ""
 			}
 		})
-		if err := m.engineRef.Receive(m.ctx, cmd); err != nil {
+		if err := engine.Receive(ctx, cmd); err != nil {
 			return errorMsg(fmt.Sprintf("%s error: %v", errPrefix, err))
 		}
 		select {

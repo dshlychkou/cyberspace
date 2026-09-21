@@ -84,15 +84,19 @@ func (s *State) ToSaveFile() SaveFile {
 		sf.Edges = append(sf.Edges, SaveEdge{From: e.From, To: e.To})
 	}
 
-	// Entities
+	// Entities — deep-copy so SaveCmd callers can marshal safely after the
+	// actor continues mutating live state.
 	for _, p := range s.Programs {
-		sf.Programs = append(sf.Programs, p)
+		cp := *p
+		sf.Programs = append(sf.Programs, &cp)
 	}
 	for _, ice := range s.ICEs {
-		sf.ICEs = append(sf.ICEs, ice)
+		cp := *ice
+		sf.ICEs = append(sf.ICEs, &cp)
 	}
 	for _, v := range s.Viruses {
-		sf.Viruses = append(sf.Viruses, v)
+		cp := *v
+		sf.Viruses = append(sf.Viruses, &cp)
 	}
 
 	// Scheduler
@@ -141,14 +145,8 @@ func FromSaveFile(sf *SaveFile) (*State, error) {
 		rng:          rng,
 	}
 
-	for _, p := range sf.Programs {
-		s.Programs[p.ID] = p
-	}
-	for _, ice := range sf.ICEs {
-		s.ICEs[ice.ID] = ice
-	}
-	for _, v := range sf.Viruses {
-		s.Viruses[v.ID] = v
+	if err := restoreSaveEntities(net, sf, s); err != nil {
+		return nil, err
 	}
 
 	// Restore scheduler
@@ -166,6 +164,37 @@ func FromSaveFile(sf *SaveFile) (*State, error) {
 	}
 
 	return s, nil
+}
+
+func restoreSaveEntities(net *network.Network, sf *SaveFile, s *State) error {
+	for _, p := range sf.Programs {
+		if p == nil {
+			return fmt.Errorf("save file contains nil program")
+		}
+		if net.GetNode(p.NodeID) == nil {
+			return fmt.Errorf("program %d references unknown node %d", p.ID, p.NodeID)
+		}
+		s.Programs[p.ID] = p
+	}
+	for _, ice := range sf.ICEs {
+		if ice == nil {
+			return fmt.Errorf("save file contains nil ICE")
+		}
+		if net.GetNode(ice.NodeID) == nil {
+			return fmt.Errorf("ICE %d references unknown node %d", ice.ID, ice.NodeID)
+		}
+		s.ICEs[ice.ID] = ice
+	}
+	for _, v := range sf.Viruses {
+		if v == nil {
+			return fmt.Errorf("save file contains nil virus")
+		}
+		if net.GetNode(v.NodeID) == nil {
+			return fmt.Errorf("virus %d references unknown node %d", v.ID, v.NodeID)
+		}
+		s.Viruses[v.ID] = v
+	}
+	return nil
 }
 
 func ResolveSaveDir(configured string) (string, error) {
