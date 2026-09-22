@@ -8,10 +8,18 @@ Terminal network strategy game.
 
 Infiltrate a cyberpunk network, deploy programs, hack through ICE defenses, spread viruses, and capture the CORE to win.
 
+**Module:** [`github.com/dshlychkou/cyberspace/v2`](https://github.com/dshlychkou/cyberspace)
+
 ## Run
 
 ```bash
 task run
+```
+
+Or:
+
+```bash
+go run ./cmd/cyberspace
 ```
 
 ## How to play
@@ -23,21 +31,27 @@ You control **programs** spreading through a network of nodes. Your goal is to g
 - **ICE** (enemy defenses) destroys your programs when it outnumbers them on a node
 - **Viruses** convert nearby ICE into programs
 
+The map is a flat **2D radial** view. Links are drawn with **braille** for smoother edges. Selected node links highlight in cyan. The right panel is a live **SYS://NODE-OPS** workstation console. The HUD shows CORE/Threat gauges and Data/Compute sparklines.
+
 ### Controls
 
-| Key             | Action                        |
-|-----------------|-------------------------------|
-| `←`/`↑`/`↓`/`→` | Navigate graph (spatial)      |
-| `Click`         | Select node                   |
-| `S`             | Spawn program (costs Data)    |
-| `V`             | Deploy virus (costs Compute)  |
-| `Space`         | Pause / Resume                |
-| `+`/`-`         | Speed up / slow down          |
-| `Q`             | Quit                          |
+| Key             | Action                              |
+|-----------------|-------------------------------------|
+| `←`/`↑`/`↓`/`→` | Navigate graph (spatial)            |
+| `Click`         | Select node                         |
+| `h` / `l`       | Rotate map (yaw)                    |
+| `0`             | Reset map view                      |
+| `S`             | Spawn program (costs Data)          |
+| `V`             | Deploy virus (costs Compute)        |
+| `Space`         | Pause / Resume                      |
+| `+` / `-`       | Speed up / slow down                |
+| `Esc`           | Menu (pauses; Continue / Save)      |
+| `R`             | New game (after game over)          |
+| `Q`             | Quit (from menu)                    |
 
 ### Win condition
 
-Get **4+ programs** onto the **CORE** node and **hold for 8 consecutive ticks**. The CORE doesn't allow auto-spread — you must manually spawn programs there with `S`.
+Get **3+ programs** (default `core_win_threshold`) onto the **CORE** node and **hold for 8 consecutive ticks**. The CORE doesn't allow auto-spread — you must manually spawn programs there with `S`.
 
 ### Lose condition
 
@@ -67,9 +81,10 @@ You lose when **all programs are destroyed** (after a 5-tick grace period at gam
 | `P`    | Program (yours)                         |
 | `I`    | ICE (enemy defense)                     |
 | `V`    | Virus (converts ICE)                    |
-| `$`    | Data flow                               |
-| `~`    | Compute flow                            |
-| `×`    | ICE threat                              |
+| `[…]`  | Selected node                           |
+| `(…)`  | Neighbor of selection                   |
+
+Cyan braille edges = links of the selected node.
 
 ## Configuration
 
@@ -108,10 +123,11 @@ CYBERSPACE_TICK_RATE=2s CYBERSPACE_INITIAL_ICE=4 go run ./cmd/cyberspace
 | `--cyberspace_spread_exact`           | `CYBERSPACE_SPREAD_EXACT`             | `3`                   | Neighbor programs needed for auto-spread           |
 | `--cyberspace_initial_data`           | `CYBERSPACE_INITIAL_DATA`             | `150`                 | Starting Data resource                             |
 | `--cyberspace_initial_compute`        | `CYBERSPACE_INITIAL_COMPUTE`          | `60`                  | Starting Compute resource                          |
-| `--cyberspace_ice_spawn_tick`         | `CYBERSPACE_ICE_SPAWN_TICK`           | `25`                  | Tick when first new ICE spawns                     |
+| `--cyberspace_ice_spawn_tick`         | `CYBERSPACE_ICE_SPAWN_TICK`           | `25`                  | Tick when first new ICE spawns (`0` = disabled)    |
 | `--cyberspace_ice_spawn_min_interval` | `CYBERSPACE_ICE_SPAWN_MIN_INTERVAL`   | `8`                   | Fastest ICE spawn interval (tick floor)            |
 | `--cyberspace_ice_escalation_tick`    | `CYBERSPACE_ICE_ESCALATION_TICK`      | `80`                  | Tick when ICE bursts begin                         |
 | `--cyberspace_ice_escalation_rate`    | `CYBERSPACE_ICE_ESCALATION_RATE`      | `50`                  | Ticks between ICE escalation bursts                |
+| `--cyberspace_grace_period`           | `CYBERSPACE_GRACE_PERIOD`             | `5`                   | Ticks before all-programs-destroyed can end game   |
 | `--cyberspace_event_log_size`         | `CYBERSPACE_EVENT_LOG_SIZE`           | `20`                  | Events shown in snapshot                           |
 | `--cyberspace_event_log_file`         | `CYBERSPACE_EVENT_LOG_FILE`           | `./cyberspace.log`    | File path for JSON event log (empty = disabled)    |
 | `--cyberspace_save_dir`               | `CYBERSPACE_SAVE_DIR`                 | `~/.cyberspace/saves` | Directory for save files                           |
@@ -120,4 +136,6 @@ CYBERSPACE_TICK_RATE=2s CYBERSPACE_INITIAL_ICE=4 go run ./cmd/cyberspace
 
 ```bash
 task test
+# or full check:
+task sanity
 ```
