@@ -1,4 +1,4 @@
-module github.com/dshlychkou/cyberspace
+module github.com/dshlychkou/cyberspace/v2
 
 go 1.27
 

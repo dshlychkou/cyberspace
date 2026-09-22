@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
 func countEntities(n game.NodeSnapshot, snap *game.StateSnapshot) (programs, ices, viruses int) {

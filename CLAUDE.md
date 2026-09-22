@@ -3,7 +3,7 @@
 Terminal network strategy game. Infiltrate a cyberpunk network, deploy programs, hack through ICE defenses, spread viruses, and capture the CORE to win.
 
 ## Module
-github.com/dshlychkou/cyberspace
+github.com/dshlychkou/cyberspace/v2
 
 ## Dependencies
 - github.com/barnowlsnest/go-actorlib/v5 -- Actor model (game engine)

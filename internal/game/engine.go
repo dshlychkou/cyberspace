@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dshlychkou/cyberspace/internal/entity"
-	"github.com/dshlychkou/cyberspace/internal/network"
-	"github.com/dshlychkou/cyberspace/internal/scheduler"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/network"
+	"github.com/dshlychkou/cyberspace/v2/internal/scheduler"
 )
 
 // TickCmd advances the game by one tick. The tick pipeline runs in order:

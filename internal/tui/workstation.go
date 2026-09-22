@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
 const workstationCap = 48

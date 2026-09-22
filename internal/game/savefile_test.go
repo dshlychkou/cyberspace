@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dshlychkou/cyberspace/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
 )
 
 func mustFromSaveFile(t *testing.T, sf *SaveFile) *State {

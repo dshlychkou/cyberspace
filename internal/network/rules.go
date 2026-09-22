@@ -1,7 +1,7 @@
 package network
 
 import (
-	"github.com/dshlychkou/cyberspace/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
 )
 
 // RuleConfig holds tunable parameters for Conway-style cellular automata rules.

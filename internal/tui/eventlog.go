@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
 func renderEventLog(events []game.Event, height int) string {

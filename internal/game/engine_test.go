@@ -9,7 +9,7 @@ import (
 	"github.com/barnowlsnest/go-actorlib/v5/pkg/middleware"
 	"github.com/barnowlsnest/go-logslib/v2/pkg/logger"
 
-	"github.com/dshlychkou/cyberspace/internal/network"
+	"github.com/dshlychkou/cyberspace/v2/internal/network"
 )
 
 func testConfig() Config {

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
-	"github.com/dshlychkou/cyberspace/internal/network"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/network"
 )
 
 func TestWorkstationBootOnce(t *testing.T) {
