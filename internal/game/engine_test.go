@@ -138,6 +138,91 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 	return a
 }
 
+func TestShutdownCmdClosesEventLogWithBackgroundCtx(t *testing.T) {
+	cfg := testConfig()
+	cfg.EventLogFile = t.TempDir() + "/events.log"
+	state := mustInitGame(t, &cfg)
+	if state.eventLogFile == nil {
+		t.Fatal("expected event log to be open")
+	}
+
+	// Engine on its own lifecycle ctx (not the TUI signal ctx).
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+	defer engineCancel()
+
+	a, err := actor.StartNew(
+		engineCtx,
+		5*time.Second,
+		actor.WithProvider(&stateProvider{state: state}),
+		actor.WithName[*State]("shutdown-engine"),
+		actor.WithInputBufferSize[*State](16),
+		actor.WithMiddleware(middleware.Recovery[*State](logger.New(logger.Config{Level: logger.ErrorLevel}))),
+	)
+	if err != nil {
+		t.Fatalf("start actor: %v", err)
+	}
+	defer func() { _ = a.Stop(5 * time.Second) }()
+
+	// Even if the TUI signal ctx is already canceled, ShutdownCmd still delivers
+	// when Receive uses an independent context (stopEngine uses Background).
+	signalCtx, signalCancel := context.WithCancel(context.Background())
+	signalCancel()
+	_ = signalCtx // documents the SIGINT scenario; Receive may still enqueue if buffer free
+
+	if err := a.Receive(context.Background(), &ShutdownCmd{}); err != nil {
+		t.Fatalf("Background ShutdownCmd: %v", err)
+	}
+	deadline := time.After(2 * time.Second)
+	for state.eventLogFile != nil || state.eventLogger != nil {
+		select {
+		case <-deadline:
+			t.Fatal("event log still open after ShutdownCmd")
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
+func TestCloseEventLogSafetyNetAfterActorCancel(t *testing.T) {
+	cfg := testConfig()
+	cfg.EventLogFile = t.TempDir() + "/events.log"
+	state := mustInitGame(t, &cfg)
+
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+	a, err := actor.StartNew(
+		engineCtx,
+		5*time.Second,
+		actor.WithProvider(&stateProvider{state: state}),
+		actor.WithName[*State]("cancel-engine"),
+		actor.WithInputBufferSize[*State](16),
+		actor.WithMiddleware(middleware.Recovery[*State](logger.New(logger.Config{Level: logger.ErrorLevel}))),
+	)
+	if err != nil {
+		t.Fatalf("start actor: %v", err)
+	}
+
+	engineCancel() // old SIGINT bug: actor parent ctx dies first
+	deadline := time.After(2 * time.Second)
+	for {
+		err := a.Receive(context.Background(), &ShutdownCmd{})
+		if err != nil {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("actor still accepting commands after cancel")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	state.CloseEventLog()
+	if state.eventLogger != nil || state.eventLogFile != nil {
+		t.Fatal("safety-net CloseEventLog did not clear log handles")
+	}
+	_ = a.Stop(5 * time.Second)
+}
+
 func TestTickCmdViaActor(t *testing.T) {
 	cfg := testConfig()
 	state := mustInitGame(t, &cfg)

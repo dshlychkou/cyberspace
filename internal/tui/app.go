@@ -50,6 +50,8 @@ type Model struct {
 
 	state          game.StateSnapshot
 	engineRef      *actor.GoActor[*game.State]
+	engineState    *game.State
+	engineCancel   context.CancelFunc
 	ctx            context.Context
 	width          int
 	height         int
@@ -422,8 +424,12 @@ func (m *Model) startGame() (tea.Model, tea.Cmd) {
 func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd) {
 	metrics := &middleware.Metrics{}
 
+	// Engine lifecycle is independent of the signal ctx used to quit the TUI.
+	// Otherwise SIGINT cancels the actor before ShutdownCmd can CloseEventLog.
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+
 	engineActor, err := actor.StartNew[*game.State](
-		m.ctx,
+		engineCtx,
 		5*time.Second,
 		actor.WithProvider[*game.State](&StateProvider{State: gameState}),
 		actor.WithName[*game.State]("game-engine"),
@@ -435,6 +441,7 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 		),
 	)
 	if err != nil {
+		engineCancel()
 		m.statusMsg = fmt.Sprintf("Failed to start game: %v", err)
 		return m, nil
 	}
@@ -445,6 +452,8 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 
 	m.state = snap
 	m.engineRef = engineActor
+	m.engineState = gameState
+	m.engineCancel = engineCancel
 	m.tickRate = gameState.Config.TickRate
 	m.nodeIDs = nodeIDs
 	m.metrics = metrics
@@ -859,9 +868,19 @@ func (m *Model) spatialSelect(dirX, dirY int) uint64 {
 
 func (m *Model) stopEngine() {
 	if m.engineRef != nil {
-		_ = m.engineRef.Receive(m.ctx, &game.ShutdownCmd{})
+		// Use Background so SIGINT-canceled model ctx cannot skip ShutdownCmd.
+		_ = m.engineRef.Receive(context.Background(), &game.ShutdownCmd{})
 		_ = m.engineRef.Stop(5 * time.Second)
 		m.engineRef = nil
+	}
+	// Safety net if Receive failed (actor already stopped) — CloseEventLog is idempotent.
+	if m.engineState != nil {
+		m.engineState.CloseEventLog()
+		m.engineState = nil
+	}
+	if m.engineCancel != nil {
+		m.engineCancel()
+		m.engineCancel = nil
 	}
 }
 
