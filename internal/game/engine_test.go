@@ -2,12 +2,12 @@ package game
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/barnowlsnest/go-actorlib/v4/pkg/actor"
-	"github.com/barnowlsnest/go-actorlib/v4/pkg/middleware"
+	"github.com/barnowlsnest/go-actorlib/v5/pkg/actor"
+	"github.com/barnowlsnest/go-actorlib/v5/pkg/middleware"
+	"github.com/barnowlsnest/go-logslib/v2/pkg/logger"
 
 	"github.com/dshlychkou/cyberspace/internal/network"
 )
@@ -129,7 +129,7 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 		actor.WithProvider(&stateProvider{state: state}),
 		actor.WithName[*State]("test-engine"),
 		actor.WithInputBufferSize[*State](16),
-		actor.WithMiddleware(middleware.Recovery[*State](slog.Default())),
+		actor.WithMiddleware(middleware.Recovery[*State](logger.New(logger.Config{Level: logger.ErrorLevel}))),
 	)
 	if err != nil {
 		t.Fatalf("failed to start actor: %v", err)

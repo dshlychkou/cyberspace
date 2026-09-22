@@ -15,7 +15,6 @@ var (
 	colorNeonPink    = lipgloss.Color("#FF6EC7")
 	colorWhite       = lipgloss.Color("#FFFFFF")
 	colorDim         = lipgloss.Color("#555555")
-	colorGridDot     = lipgloss.Color("#1A1028")
 	colorBg          = lipgloss.Color("#0A0A0A")
 	colorBorder      = lipgloss.Color("#6B2FA0")
 

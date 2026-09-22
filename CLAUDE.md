@@ -6,7 +6,7 @@ Terminal network strategy game. Infiltrate a cyberpunk network, deploy programs,
 github.com/dshlychkou/cyberspace
 
 ## Dependencies
-- github.com/barnowlsnest/go-actorlib/v4 -- Actor model (game engine)
+- github.com/barnowlsnest/go-actorlib/v5 -- Actor model (game engine)
 - github.com/barnowlsnest/go-datalib/v5 -- Data structures (DAG, Heap, BTree, Fenwick)
 - charm.land/bubbletea/v2 -- TUI framework
 - charm.land/lipgloss/v2 -- TUI styling (neon purple/cyberpunk theme)

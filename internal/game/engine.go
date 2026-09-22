@@ -397,10 +397,15 @@ func (c *DeployVirusCmd) Execute(_ context.Context, s *State) {
 
 // TogglePauseCmd flips the paused flag. While paused, TickCmd still
 // returns a snapshot but skips all simulation.
-type TogglePauseCmd struct{}
+type TogglePauseCmd struct {
+	OnComplete func(StateSnapshot)
+}
 
 func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
+	if c.OnComplete != nil {
+		c.OnComplete(s.Snapshot())
+	}
 }
 
 // SaveCmd serializes the current game state into a SaveFile. File I/O

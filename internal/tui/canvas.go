@@ -4,15 +4,25 @@ import (
 	"image/color"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 )
 
-const (
-	charDot  = "·"
-	charHBar = "─"
-	charVBar = "│"
-)
+// Braille Patterns (U+2800): each cell is a 2×4 dot grid.
+//
+//	(1) (4)     bits 0x01 0x08
+//	(2) (5)          0x02 0x10
+//	(3) (6)          0x04 0x20
+//	(7) (8)          0x40 0x80
+var brailleBit = [4][2]byte{
+	{0x01, 0x08},
+	{0x02, 0x10},
+	{0x04, 0x20},
+	{0x40, 0x80},
+}
+
+const brailleBase = 0x2800
 
 type cell struct {
 	ch string
@@ -29,12 +39,7 @@ func newCanvas(w, h int) *canvas {
 	for y := range h {
 		cells[y] = make([]cell, w)
 		for x := range w {
-			// Subtle grid dots for CRT/matrix vibe
-			if x%4 == 0 && y%2 == 0 {
-				cells[y][x] = cell{ch: charDot, fg: colorGridDot}
-			} else {
-				cells[y][x] = cell{ch: " ", fg: colorBg}
-			}
+			cells[y][x] = cell{ch: " ", fg: colorBg}
 		}
 	}
 	return &canvas{cells: cells, w: w, h: h}
@@ -57,52 +62,96 @@ func (c *canvas) get(x, y int) cell {
 	return cell{ch: " ", fg: colorBg}
 }
 
+func (c *canvas) clearRect(x, y, w, h int) {
+	for dy := range h {
+		for dx := range w {
+			c.set(x+dx, y+dy, " ", colorBg)
+		}
+	}
+}
+
 func (c *canvas) drawText(x, y int, text string, fg color.Color) {
 	for i, ch := range text {
 		c.set(x+i, y, string(ch), fg)
 	}
 }
 
-func (c *canvas) drawLine(x1, y1, x2, y2 int, fg color.Color) {
-	dx := x2 - x1
-	dy := y2 - y1
+// setBrailleDot lights one sub-cell pixel (px,py) in 2×4 braille space.
+func (c *canvas) setBrailleDot(px, py int, fg color.Color) {
+	if px < 0 || py < 0 {
+		return
+	}
+	cx, cy := px/2, py/4
+	if !c.inBounds(cx, cy) {
+		return
+	}
+	lx, ly := px%2, py%4
+	bit := brailleBit[ly][lx]
+
+	existing := c.cells[cy][cx]
+	var pattern rune = brailleBase
+	if r, ok := brailleRune(existing.ch); ok {
+		pattern = r
+	} else if existing.ch != " " {
+		// Don't paint over node labels / legend text.
+		return
+	}
+	pattern |= rune(bit)
+	c.cells[cy][cx] = cell{ch: string(pattern), fg: fg}
+}
+
+func brailleRune(ch string) (rune, bool) {
+	r, size := utf8.DecodeRuneInString(ch)
+	if size != len(ch) || r < brailleBase || r > brailleBase+0xFF {
+		return 0, false
+	}
+	return r, true
+}
+
+// drawEdge paints a smooth braille line in cell coordinates.
+// Endpoints stay clear for node labels. solid=false sparsifies dots.
+func (c *canvas) drawEdge(x1, y1, x2, y2 int, fg color.Color, solid bool) {
+	// Pixel centers of the two cells.
+	px1 := x1*2 + 1
+	py1 := y1*4 + 2
+	px2 := x2*2 + 1
+	py2 := y2*4 + 2
+
+	dx := px2 - px1
+	dy := py2 - py1
 	steps := max(abs(dx), abs(dy))
-	if steps == 0 {
+	if steps < 2 {
 		return
 	}
 
+	pad := edgePad(steps)
 	fx := float64(dx) / float64(steps)
 	fy := float64(dy) / float64(steps)
+	stride := 1
+	if !solid {
+		stride = 3
+	}
 
-	for i := 1; i < steps; i++ {
-		x := x1 + int(math.Round(float64(i)*fx))
-		y := y1 + int(math.Round(float64(i)*fy))
-
-		if !c.inBounds(x, y) {
-			continue
+	for i := pad; i <= steps-pad; i += stride {
+		px := px1 + int(math.Round(float64(i)*fx))
+		py := py1 + int(math.Round(float64(i)*fy))
+		c.setBrailleDot(px, py, fg)
+		if solid {
+			// Slight thickness for selected links.
+			c.setBrailleDot(px, py+1, fg)
 		}
-		// Don't overwrite nodes
-		existing := c.get(x, y)
-		if existing.ch != " " && existing.ch != charDot && existing.ch != charHBar && existing.ch != charVBar {
-			continue
-		}
-
-		ch := edgeChar(fx, fy)
-		c.set(x, y, ch, fg)
 	}
 }
 
-func edgeChar(fx, fy float64) string {
-	ax := math.Abs(fx)
-	ay := math.Abs(fy)
-
-	if ay < 0.15 {
-		return charHBar
+func edgePad(steps int) int {
+	switch {
+	case steps < 6:
+		return 1
+	case steps < 12:
+		return 3
+	default:
+		return 5 // ~1–1.5 cells clear at each end
 	}
-	if ax < 0.3 {
-		return charVBar
-	}
-	return charDot
 }
 
 func (c *canvas) render() string {
@@ -113,7 +162,6 @@ func (c *canvas) render() string {
 		for x := range c.w {
 			cell := c.cells[y][x]
 			if cell.fg != prevFg {
-				// Flush previous run
 				if run.Len() > 0 {
 					sb.WriteString(lipgloss.NewStyle().Foreground(prevFg).Render(run.String()))
 					run.Reset()

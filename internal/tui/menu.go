@@ -271,10 +271,14 @@ func renderAbout(width, height int) string {
 		lipgloss.NewStyle().Foreground(colorWhite).Render(
 			"  Space      Toggle pause\n"+
 				"  arrows     Select node\n"+
+				"  h/l        Rotate map\n"+
+				"  0          Reset view\n"+
 				"  s          Spawn program (costs Data)\n"+
 				"  v          Deploy virus (costs Compute)\n"+
 				"  +/-        Adjust speed\n"+
-				"  q          Quit")
+				"  Esc        Menu (pauses)\n"+
+				"  R          New game (after game over)\n"+
+				"  q          Quit (from menu)")
 
 	economy := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Render("Economy") + "\n" +
 		lipgloss.NewStyle().Foreground(colorWhite).Render(
