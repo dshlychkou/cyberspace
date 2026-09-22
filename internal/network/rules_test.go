@@ -3,7 +3,7 @@ package network
 import (
 	"testing"
 
-	"github.com/dshlychkou/cyberspace/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
 )
 
 var defaultCfg = RuleConfig{SurviveMin: 1, SurviveMax: 10, SpreadExact: 3}

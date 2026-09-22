@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
 func (m *Model) loadSaves() {

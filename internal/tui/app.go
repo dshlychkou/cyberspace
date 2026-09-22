@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"slices"
 	"time"
@@ -11,10 +10,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/barnowlsnest/go-actorlib/v4/pkg/actor"
-	"github.com/barnowlsnest/go-actorlib/v4/pkg/middleware"
+	"github.com/barnowlsnest/go-actorlib/v5/pkg/actor"
+	"github.com/barnowlsnest/go-actorlib/v5/pkg/middleware"
+	"github.com/barnowlsnest/go-logslib/v2/pkg/logger"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
 type screen int
@@ -50,6 +50,8 @@ type Model struct {
 
 	state          game.StateSnapshot
 	engineRef      *actor.GoActor[*game.State]
+	engineState    *game.State
+	engineCancel   context.CancelFunc
 	ctx            context.Context
 	width          int
 	height         int
@@ -57,11 +59,14 @@ type Model struct {
 	nodeIDs        []uint64
 	nodePositions  []nodePos
 	graphOffset    struct{ x, y int }
+	cam            camera
 	tickRate       time.Duration
 	statusMsg      string
 	metrics        *middleware.Metrics
 	saveFiles      []game.SaveFileInfo
 	loadIdx        int
+	sparks         sparkHistory
+	ws             workstation
 }
 
 func sortedNodeIDs[T any](nodes map[uint64]T) []uint64 {
@@ -80,11 +85,13 @@ type StateProvider struct {
 func (p *StateProvider) Provide() *game.State { return p.State }
 
 func NewModel(ctx context.Context, cfg *game.Config) *Model {
-	return &Model{
+	m := &Model{
 		screen: screenMenu,
 		cfg:    *cfg,
 		ctx:    ctx,
 	}
+	m.cam.reset()
+	return m
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -196,6 +203,8 @@ func (m *Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateMsg:
 		m.state = game.StateSnapshot(msg)
+		m.sparks.push(m.state.Tick, m.state.Resources.Data, m.state.Resources.Compute)
+		m.ws.sync(&m.state)
 		nodeIDs := sortedNodeIDs(m.state.Nodes)
 		m.nodeIDs = nodeIDs
 		// Validate selectedNodeID still exists; fallback to first node
@@ -204,7 +213,7 @@ func (m *Model) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.computeNodePositions()
 		m.computeGraphOffset()
-		m.statusMsg = ""
+		// Keep statusMsg so spawn/afford errors stay visible across ticks.
 		return m, nil
 
 	case errorMsg:
@@ -247,15 +256,18 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m.handleRestart()
 	case "space":
+		m.statusMsg = ""
 		cmd := m.sendTogglePause()
 		return m, cmd
 	case "s":
 		if m.selectedNodeID != 0 && !m.state.GameOver {
+			m.statusMsg = ""
 			cmd := m.sendSpawnProgram(m.selectedNodeID)
 			return m, cmd
 		}
 	case "v":
 		if m.selectedNodeID != 0 && !m.state.GameOver {
+			m.statusMsg = ""
 			cmd := m.sendDeployVirus(m.selectedNodeID)
 			return m, cmd
 		}
@@ -263,8 +275,55 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.adjustSpeed(-100 * time.Millisecond)
 	case "-":
 		m.adjustSpeed(100 * time.Millisecond)
+	default:
+		if m.handleCameraKey(msg) {
+			return m, nil
+		}
 	}
 	return m, nil
+}
+
+func (m *Model) handleCameraKey(msg tea.KeyPressMsg) bool {
+	dir, ok := cameraKeyDir(msg)
+	if !ok {
+		return false
+	}
+	switch dir {
+	case camYawLeft:
+		m.cam.orbitYaw(-1)
+	case camYawRight:
+		m.cam.orbitYaw(1)
+	case camReset:
+		m.cam.reset()
+	}
+	m.computeNodePositions()
+	return true
+}
+
+type camKey int
+
+const (
+	camYawLeft camKey = iota
+	camYawRight
+	camReset
+)
+
+func cameraKeyDir(msg tea.KeyPressMsg) (camKey, bool) {
+	for _, tok := range []string{msg.String(), msg.Text, string(msg.Code)} {
+		if tok == "" {
+			continue
+		}
+		if dir, ok := cameraKeyMap[tok]; ok {
+			return dir, true
+		}
+	}
+	return 0, false
+}
+
+var cameraKeyMap = map[string]camKey{
+	"[": camYawLeft, "h": camYawLeft,
+	"]": camYawRight, "l": camYawRight,
+	"0": camReset,
 }
 
 func (m *Model) pauseAndReturnToMenu() (tea.Model, tea.Cmd) {
@@ -286,6 +345,9 @@ func (m *Model) destroyGame() {
 	m.nodePositions = nil
 	m.nodeIDs = nil
 	m.statusMsg = ""
+	m.cam.reset()
+	m.sparks.reset()
+	m.ws.reset()
 }
 
 func (m *Model) continueGame() (tea.Model, tea.Cmd) {
@@ -362,19 +424,24 @@ func (m *Model) startGame() (tea.Model, tea.Cmd) {
 func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd) {
 	metrics := &middleware.Metrics{}
 
+	// Engine lifecycle is independent of the signal ctx used to quit the TUI.
+	// Otherwise SIGINT cancels the actor before ShutdownCmd can CloseEventLog.
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+
 	engineActor, err := actor.StartNew[*game.State](
-		m.ctx,
+		engineCtx,
 		5*time.Second,
 		actor.WithProvider[*game.State](&StateProvider{State: gameState}),
 		actor.WithName[*game.State]("game-engine"),
 		actor.WithInputBufferSize[*game.State](32),
 		actor.WithReceiveTimeout[*game.State](10*time.Second),
 		actor.WithMiddleware(
-			middleware.Recovery[*game.State](slog.Default()),
+			middleware.Recovery[*game.State](logger.New(logger.Config{Level: logger.ErrorLevel})),
 			middleware.MetricsMiddleware[*game.State](metrics),
 		),
 	)
 	if err != nil {
+		engineCancel()
 		m.statusMsg = fmt.Sprintf("Failed to start game: %v", err)
 		return m, nil
 	}
@@ -385,16 +452,46 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 
 	m.state = snap
 	m.engineRef = engineActor
+	m.engineState = gameState
+	m.engineCancel = engineCancel
 	m.tickRate = gameState.Config.TickRate
 	m.nodeIDs = nodeIDs
 	m.metrics = metrics
 	m.screen = screenGame
 	m.statusMsg = ""
-	if len(nodeIDs) > 0 {
-		m.selectedNodeID = nodeIDs[0]
-	}
+	m.cam.reset()
+	m.sparks.reset()
+	m.sparks.push(snap.Tick, snap.Resources.Data, snap.Resources.Compute)
+	m.ws.reset()
+	m.ws.sync(&snap)
+	m.selectedNodeID = selectStartNode(&snap)
+	m.computeNodePositions()
+	m.computeGraphOffset()
 
 	return m, doTick(m.tickRate)
+}
+
+func selectStartNode(snap *game.StateSnapshot) uint64 {
+	counts := make(map[uint64]int)
+	for _, p := range snap.Programs {
+		counts[p.NodeID]++
+	}
+	var best uint64
+	bestN := -1
+	for id, n := range counts {
+		if n > bestN || (n == bestN && (best == 0 || id < best)) {
+			bestN = n
+			best = id
+		}
+	}
+	if best != 0 {
+		return best
+	}
+	ids := sortedNodeIDs(snap.Nodes)
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	return 0
 }
 
 func (m *Model) saveGame() tea.Cmd {
@@ -494,7 +591,7 @@ func (m *Model) renderGame() string {
 	d := m.panelDimensions()
 
 	// HUD
-	hud := renderHUD(&m.state, d.innerWidth)
+	hud := renderHUD(&m.state, d.innerWidth, m.tickRate, &m.sparks)
 
 	graph := renderGraph(&m.state, m.selectedNodeID, m.nodePositions, d.innerWidth, d.graphHeight)
 
@@ -504,8 +601,8 @@ func (m *Model) renderGame() string {
 	// Event log
 	eventLog := renderEventLog(m.state.Events, d.eventHeight)
 
-	// Sidebar (guide) — constrain to panel inner height
-	sidebar := renderSidebar(&m.state, d.sidebarWidth-4)
+	// Sidebar — CRT workstation console
+	sidebar := renderSidebar(&m.state, m.selectedNodeID, d.sidebarWidth-4, d.innerHeight, &m.ws)
 
 	// Compose left panel with explicit height to match terminal
 	leftPanel := stylePanel.Width(d.mainWidth).Height(d.innerHeight).Render(
@@ -523,52 +620,51 @@ func (m *Model) renderGame() string {
 	// Join horizontally
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
+	footer := styleEvent.Render(fmt.Sprintf(
+		"arrows select  ·  h/l rotate  ·  S −%dD  V −%dC  ·  Spc  +/-  Esc  ·  cyan=links of selection",
+		m.state.ProgramSpawnCost, m.state.VirusDeployCost))
+
 	// Status bar
 	statusBar := ""
 	if m.statusMsg != "" {
 		statusBar = styleError.Render(m.statusMsg)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, body, statusBar)
+	return lipgloss.JoinVertical(lipgloss.Left, body, footer, statusBar)
 }
 
 func (m *Model) sendTick() tea.Cmd {
+	return m.sendSnapshotCmd("tick", func(onComplete func(game.StateSnapshot)) actor.Executable[*game.State] {
+		return &game.TickCmd{OnComplete: onComplete}
+	})
+}
+
+func (m *Model) sendTogglePause() tea.Cmd {
+	return m.sendSnapshotCmd("pause", func(onComplete func(game.StateSnapshot)) actor.Executable[*game.State] {
+		return &game.TogglePauseCmd{OnComplete: onComplete}
+	})
+}
+
+func (m *Model) sendSnapshotCmd(errPrefix string, build func(func(game.StateSnapshot)) actor.Executable[*game.State]) tea.Cmd {
 	engine := m.engineRef
 	ctx := m.ctx
 	return func() tea.Msg {
 		if engine == nil {
-			return errorMsg("tick error: engine not running")
+			return errorMsg(fmt.Sprintf("%s error: engine not running", errPrefix))
 		}
 		done := make(chan game.StateSnapshot, 1)
-		cmd := &game.TickCmd{
-			OnComplete: func(snap game.StateSnapshot) {
-				done <- snap
-			},
-		}
+		cmd := build(func(snap game.StateSnapshot) {
+			done <- snap
+		})
 		if err := engine.Receive(ctx, cmd); err != nil {
-			return errorMsg(fmt.Sprintf("tick error: %v", err))
+			return errorMsg(fmt.Sprintf("%s error: %v", errPrefix, err))
 		}
 		select {
 		case snap := <-done:
 			return stateMsg(snap)
 		case <-time.After(5 * time.Second):
-			return errorMsg("tick timeout")
+			return errorMsg(errPrefix + " timeout")
 		}
-	}
-}
-
-func (m *Model) sendTogglePause() tea.Cmd {
-	engine := m.engineRef
-	ctx := m.ctx
-	return func() tea.Msg {
-		if engine == nil {
-			return errorMsg("pause error: engine not running")
-		}
-		cmd := &game.TogglePauseCmd{}
-		if err := engine.Receive(ctx, cmd); err != nil {
-			return errorMsg(fmt.Sprintf("pause error: %v", err))
-		}
-		return nil
 	}
 }
 
@@ -598,7 +694,21 @@ func (m *Model) sendCmd(build func(onComplete func(bool, string)) actor.Executab
 			if msg != "" {
 				return errorMsg(msg)
 			}
-			return nil
+			snapDone := make(chan game.StateSnapshot, 1)
+			getCmd := &game.GetStateCmd{
+				OnComplete: func(snap game.StateSnapshot) {
+					snapDone <- snap
+				},
+			}
+			if err := engine.Receive(ctx, getCmd); err != nil {
+				return errorMsg(fmt.Sprintf("%s refresh error: %v", errPrefix, err))
+			}
+			select {
+			case snap := <-snapDone:
+				return stateMsg(snap)
+			case <-time.After(5 * time.Second):
+				return errorMsg(errPrefix + " refresh timeout")
+			}
 		case <-time.After(5 * time.Second):
 			return errorMsg(errPrefix + " timeout")
 		}
@@ -635,13 +745,14 @@ func (m *Model) panelDimensions() panelDims {
 
 	// Panel borders + padding consume 4 cols (border 2 + padding 2) and 2 rows (border top+bottom)
 	innerWidth := mainWidth - 4
-	panelHeight := m.height - 2 // leave room for status bar
+	panelHeight := m.height - 3 // footer + status bar
 	innerHeight := panelHeight - 2
 
-	// Vertical budget: HUD(1) + graph + details(3) + eventlog(eventHeight)
+	// Vertical budget: HUD(2) + graph + details(3) + eventlog(eventHeight)
+	const hudHeight = 2
 	const detailHeight = 3
 	const eventHeight = 6
-	graphHeight := max(innerHeight-1-detailHeight-eventHeight, 8)
+	graphHeight := max(innerHeight-hudHeight-detailHeight-eventHeight, 8)
 
 	return panelDims{
 		sidebarWidth: sidebarWidth,
@@ -660,15 +771,15 @@ func (m *Model) graphDimensions() (graphWidth, graphHeight int) {
 
 func (m *Model) computeNodePositions() {
 	gw, gh := m.graphDimensions()
-	m.nodePositions = layoutNodes(&m.state, gw, gh)
+	m.nodePositions = layoutNodes(&m.state, gw, gh, m.cam)
 }
 
 func (m *Model) computeGraphOffset() {
 	// stylePanel: Border(RoundedBorder()) = 1 cell each side, Padding(0, 1) = 1 cell left/right
 	// x offset: border(1) + padding(1) = 2
-	// y offset: border(1) + HUD line(1) = 2
+	// y offset: border(1) + HUD lines(2) = 3
 	m.graphOffset.x = 2
-	m.graphOffset.y = 2
+	m.graphOffset.y = 3
 }
 
 func (m *Model) hitTestNode(termX, termY int) (uint64, bool) {
@@ -757,9 +868,19 @@ func (m *Model) spatialSelect(dirX, dirY int) uint64 {
 
 func (m *Model) stopEngine() {
 	if m.engineRef != nil {
-		_ = m.engineRef.Receive(m.ctx, &game.ShutdownCmd{})
+		// Use Background so SIGINT-canceled model ctx cannot skip ShutdownCmd.
+		_ = m.engineRef.Receive(context.Background(), &game.ShutdownCmd{})
 		_ = m.engineRef.Stop(5 * time.Second)
 		m.engineRef = nil
+	}
+	// Safety net if Receive failed (actor already stopped) — CloseEventLog is idempotent.
+	if m.engineState != nil {
+		m.engineState.CloseEventLog()
+		m.engineState = nil
+	}
+	if m.engineCancel != nil {
+		m.engineCancel()
+		m.engineCancel = nil
 	}
 }
 

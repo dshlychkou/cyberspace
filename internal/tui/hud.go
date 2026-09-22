@@ -3,28 +3,22 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
-func renderHUD(snap *game.StateSnapshot, width int) string {
+func renderHUD(snap *game.StateSnapshot, width int, tickRate time.Duration, sparks *sparkHistory) string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(colorNeonPurple).Render("CYBERSPACE")
 
 	tickStr := styleHUD.Render(fmt.Sprintf("Tick:%d", snap.Tick))
+	speedStr := styleEvent.Render(fmt.Sprintf(" %dms", tickRate.Milliseconds()))
 
-	// Programs / ICE counts
 	progStr := styleProgram.Render(fmt.Sprintf("%dP", len(snap.Programs)))
 	iceStr := styleICE.Render(fmt.Sprintf("%dI", len(snap.ICEs)))
 
-	// Economy: net income/burn
-	dataNet := snap.DataIncome - snap.DataBurn
-	dataStr := formatRate("D", snap.Resources.Data, dataNet)
-	computeNet := snap.ComputeIncome - snap.ComputeBurn
-	computeStr := formatRate("C", snap.Resources.Compute, computeNet)
-
-	// Status
 	statusStr := ""
 	if snap.Paused {
 		if snap.Tick == 0 {
@@ -41,36 +35,58 @@ func renderHUD(snap *game.StateSnapshot, width int) string {
 		}
 	}
 
-	// Core hold progress
-	coreStr := ""
-	if snap.CoreHoldLen > 0 {
-		held := snap.CoreHoldLen
-		total := snap.CoreWinDuration
-		bar := renderProgressBar(held, total, 10)
-		coreStr = styleScore.Render(fmt.Sprintf(" CORE[%s %d/%d]", bar, held, total))
+	line1 := title + " " + tickStr + speedStr + " " + progStr + " " + iceStr + statusStr
+
+	coreTotal := snap.CoreWinDuration
+	if coreTotal < 1 {
+		coreTotal = 1
 	}
+	coreGauge := renderGauge(
+		"CORE",
+		snap.CoreHoldLen,
+		coreTotal,
+		12,
+		&styleScore,
+		fmt.Sprintf("%d/%d ≥%dP", snap.CoreHoldLen, coreTotal, snap.CoreWinThreshold),
+	)
 
-	left := title + " " + tickStr + " " + progStr + " " + iceStr + " " + dataStr + " " + computeStr + statusStr + coreStr
-
-	// Threat bar on right
 	iceCount := len(snap.ICEs)
 	progCount := len(snap.Programs)
 	threatPct := 0
 	if progCount+iceCount > 0 {
 		threatPct = (iceCount * 100) / (progCount + iceCount)
 	}
-	threatBar := renderThreatBar(threatPct)
-	right := fmt.Sprintf("Threat:%s%d%%", threatBar, threatPct)
+	threatStyle := styleThreatLow
+	switch {
+	case threatPct > 70:
+		threatStyle = styleThreatHigh
+	case threatPct > 40:
+		threatStyle = styleThreatMed
+	}
+	threatGauge := renderGauge("Threat", threatPct, 100, 12, &threatStyle, fmt.Sprintf("%d%%", threatPct))
 
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
+	dataNet := snap.DataIncome - snap.DataBurn
+	computeNet := snap.ComputeIncome - snap.ComputeBurn
+	var dataSpark, computeSpark string
+	if sparks != nil {
+		dataSpark = renderSparkline(sparks.data, sparkWidth, &styleScore)
+		computeSpark = renderSparkline(sparks.compute, sparkWidth, &styleSelected)
+	}
+	dataStr := styleHUD.Render("D ") + dataSpark + " " + formatRate(snap.Resources.Data, dataNet)
+	computeStr := styleHUD.Render("C ") + computeSpark + " " + formatRate(snap.Resources.Compute, computeNet)
+
+	line2 := coreGauge + "  " + threatGauge + "  " + dataStr + "  " + computeStr
+	if width > 0 {
+		pad := width - lipgloss.Width(line2)
+		if pad > 0 {
+			line2 += strings.Repeat(" ", pad)
+		}
 	}
 
-	return left + strings.Repeat(" ", gap) + right
+	return line1 + "\n" + line2
 }
 
-func formatRate(label string, current, net int) string {
+func formatRate(current, net int) string {
 	rateStr := ""
 	if net > 0 {
 		rateStr = styleScore.Render(fmt.Sprintf("+%d", net))
@@ -79,45 +95,32 @@ func formatRate(label string, current, net int) string {
 	} else {
 		rateStr = styleEvent.Render("+0")
 	}
-	return styleHUD.Render(fmt.Sprintf("%s:%d", label, current)) + rateStr
+	return styleHUD.Render(fmt.Sprintf("%d", current)) + rateStr
 }
 
-func renderProgressBar(current, total, barLen int) string {
+// renderGauge draws a btop-style bordered bar: LABEL │████░░░░│ detail
+func renderGauge(label string, current, total, barLen int, fillStyle *lipgloss.Style, detail string) string {
+	if total < 1 {
+		total = 1
+	}
 	filled := (current * barLen) / total
 	if filled > barLen {
 		filled = barLen
 	}
+	if filled < 0 {
+		filled = 0
+	}
+
 	var bar strings.Builder
+	bar.WriteString(styleEvent.Render("│"))
 	for i := range barLen {
 		if i < filled {
-			bar.WriteString(styleScore.Render("█"))
+			bar.WriteString(fillStyle.Render("█"))
 		} else {
 			bar.WriteString(styleEvent.Render("░"))
 		}
 	}
-	return bar.String()
-}
+	bar.WriteString(styleEvent.Render("│"))
 
-func renderThreatBar(pct int) string {
-	total := 8
-	filled := (pct * total) / 100
-	if filled > total {
-		filled = total
-	}
-
-	var bar strings.Builder
-	for i := range total {
-		if i < filled {
-			if pct > 70 {
-				bar.WriteString(styleThreatHigh.Render("█"))
-			} else if pct > 40 {
-				bar.WriteString(styleThreatMed.Render("█"))
-			} else {
-				bar.WriteString(styleThreatLow.Render("█"))
-			}
-		} else {
-			bar.WriteString(styleEvent.Render("░"))
-		}
-	}
-	return bar.String()
+	return styleHUD.Render(label+" ") + bar.String() + styleEvent.Render(" "+detail)
 }

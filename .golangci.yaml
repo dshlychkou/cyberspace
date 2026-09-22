@@ -104,7 +104,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/dshlychkou/cyberspace
+        - github.com/dshlychkou/cyberspace/v2
   exclusions:
     generated: lax
     paths:

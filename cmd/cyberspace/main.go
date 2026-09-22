@@ -10,8 +10,8 @@ import (
 
 	"github.com/barnowlsnest/go-configlib/v2/pkg/configs"
 
-	"github.com/dshlychkou/cyberspace/internal/game"
-	"github.com/dshlychkou/cyberspace/internal/tui"
+	"github.com/dshlychkou/cyberspace/v2/internal/game"
+	"github.com/dshlychkou/cyberspace/v2/internal/tui"
 )
 
 func main() {

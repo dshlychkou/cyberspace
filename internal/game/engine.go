@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dshlychkou/cyberspace/internal/entity"
-	"github.com/dshlychkou/cyberspace/internal/network"
-	"github.com/dshlychkou/cyberspace/internal/scheduler"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/network"
+	"github.com/dshlychkou/cyberspace/v2/internal/scheduler"
 )
 
 // TickCmd advances the game by one tick. The tick pipeline runs in order:
@@ -397,10 +397,15 @@ func (c *DeployVirusCmd) Execute(_ context.Context, s *State) {
 
 // TogglePauseCmd flips the paused flag. While paused, TickCmd still
 // returns a snapshot but skips all simulation.
-type TogglePauseCmd struct{}
+type TogglePauseCmd struct {
+	OnComplete func(StateSnapshot)
+}
 
 func (c *TogglePauseCmd) Execute(_ context.Context, s *State) {
 	s.Paused = !s.Paused
+	if c.OnComplete != nil {
+		c.OnComplete(s.Snapshot())
+	}
 }
 
 // SaveCmd serializes the current game state into a SaveFile. File I/O

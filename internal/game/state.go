@@ -10,9 +10,9 @@ import (
 
 	"github.com/barnowlsnest/go-logslib/v2/pkg/logger"
 
-	"github.com/dshlychkou/cyberspace/internal/entity"
-	"github.com/dshlychkou/cyberspace/internal/network"
-	"github.com/dshlychkou/cyberspace/internal/scheduler"
+	"github.com/dshlychkou/cyberspace/v2/internal/entity"
+	"github.com/dshlychkou/cyberspace/v2/internal/network"
+	"github.com/dshlychkou/cyberspace/v2/internal/scheduler"
 )
 
 func newGameRNG() (*rand.Rand, error) {
