@@ -2,11 +2,21 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
 	"github.com/dshlychkou/cyberspace/v2/internal/game"
+)
+
+const (
+	idleStatusEvery    = 8
+	wsMinWidth         = 8
+	wsMinHeight        = 6
+	wsRuleMaxWidth     = 22
+	wsMinConsoleHeight = 2
+	cursorBlinkPeriod  = 2
 )
 
 const workstationCap = 48
@@ -27,14 +37,14 @@ type consoleLine struct {
 // workstation is a CRT-style console feed for the right panel.
 type workstation struct {
 	lines    []consoleLine
-	lastEv   int
+	seen     []game.Event
 	lastTick int
 	booted   bool
 }
 
 func (w *workstation) reset() {
 	w.lines = w.lines[:0]
-	w.lastEv = 0
+	w.seen = w.seen[:0]
 	w.lastTick = -1
 	w.booted = false
 }
@@ -58,22 +68,26 @@ func (w *workstation) sync(snap *game.StateSnapshot) {
 		w.booted = true
 	}
 
-	// New game / load can shrink the event list — resync.
-	if len(snap.Events) < w.lastEv {
-		w.lastEv = 0
-	}
-	for i := w.lastEv; i < len(snap.Events); i++ {
-		e := snap.Events[i]
+	for _, e := range snap.Events[newEventStart(w.seen, snap.Events):] {
 		w.push(ckOps, fmt.Sprintf("[%d] %s", e.Tick, e.Message))
 	}
-	w.lastEv = len(snap.Events)
+	w.seen = append(w.seen[:0], snap.Events...)
 
 	if snap.Tick != w.lastTick {
-		if snap.Tick > 0 && snap.Tick%8 == 0 {
+		if snap.Tick > 0 && snap.Tick%idleStatusEvery == 0 {
 			w.push(ckIdle, idleStatus(snap.Tick))
 		}
 		w.lastTick = snap.Tick
 	}
+}
+
+func newEventStart(prev, cur []game.Event) int {
+	for k := min(len(prev), len(cur)); k > 0; k-- {
+		if slices.Equal(prev[len(prev)-k:], cur[:k]) {
+			return k
+		}
+	}
+	return 0
 }
 
 func idleStatus(tick int) string {
@@ -88,12 +102,8 @@ func idleStatus(tick int) string {
 }
 
 func renderWorkstation(snap *game.StateSnapshot, selectedID uint64, width, height int, ws *workstation) string {
-	if width < 8 {
-		width = 8
-	}
-	if height < 6 {
-		height = 6
-	}
+	width = max(width, wsMinWidth)
+	height = max(height, wsMinHeight)
 
 	title := styleTitle.Render("SYS://NODE-OPS")
 	obj := renderWSObjective(snap)
@@ -102,15 +112,13 @@ func renderWorkstation(snap *game.StateSnapshot, selectedID uint64, width, heigh
 	probe := renderWSProbe(snap, selectedID)
 	pulse := renderWSPulse(snap)
 
-	header := []string{title, obj, keys, "", lock, probe, styleEvent.Render(strings.Repeat("─", min(width, 22))), ""}
+	header := []string{title, obj, keys, "", lock, probe, styleEvent.Render(strings.Repeat("─", min(width, wsRuleMaxWidth))), ""}
 	footer := []string{"", pulse, renderWSCursor(snap.Tick)}
 
 	headerH := len(header)
 	footerH := len(footer)
 	consoleH := height - headerH - footerH
-	if consoleH < 2 {
-		consoleH = 2
-	}
+	consoleH = max(consoleH, wsMinConsoleHeight)
 
 	console := renderWSConsole(ws, width, consoleH)
 
@@ -190,7 +198,7 @@ func rateTag(net int) string {
 }
 
 func renderWSCursor(tick int) string {
-	if tick%2 == 0 {
+	if tick%cursorBlinkPeriod == 0 {
 		return styleSelected.Render("▌")
 	}
 	return styleEvent.Render("▌")

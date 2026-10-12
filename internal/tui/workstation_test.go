@@ -97,7 +97,27 @@ func TestWorkstationReset(t *testing.T) {
 	var w workstation
 	w.sync(&game.StateSnapshot{Tick: 1, Events: []game.Event{{Tick: 1, Message: "x"}}})
 	w.reset()
-	if w.booted || len(w.lines) != 0 || w.lastEv != 0 {
+	if w.booted || len(w.lines) != 0 || len(w.seen) != 0 {
 		t.Fatalf("reset incomplete: %+v", w)
+	}
+}
+
+func TestWorkstationIngestsSlidingWindow(t *testing.T) {
+	var w workstation
+	w.sync(&game.StateSnapshot{Tick: 1, Events: []game.Event{
+		{Tick: 1, Message: "a"}, {Tick: 1, Message: "b"}, {Tick: 1, Message: "c"},
+	}})
+	w.sync(&game.StateSnapshot{Tick: 2, Events: []game.Event{
+		{Tick: 1, Message: "b"}, {Tick: 1, Message: "c"}, {Tick: 2, Message: "d"},
+	}})
+	var ops []string
+	for _, l := range w.lines {
+		if l.kind == ckOps {
+			ops = append(ops, l.text)
+		}
+	}
+	want := []string{"[1] a", "[1] b", "[1] c", "[2] d"}
+	if strings.Join(ops, "|") != strings.Join(want, "|") {
+		t.Fatalf("ops = %v, want %v", ops, want)
 	}
 }

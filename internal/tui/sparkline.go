@@ -4,8 +4,11 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-const sparkHistoryCap = 24
-const sparkWidth = 12
+const (
+	sparkWidth      = 12
+	sparkHistoryCap = sparkWidth
+	sparkMaxLevel   = len(sparkLevels) - 1
+)
 
 // sparkLevels: braille columns filled from the bottom (0 empty → 4 full).
 var sparkLevels = [5]rune{
@@ -30,7 +33,7 @@ func (h *sparkHistory) reset() {
 
 // push records a sample when the tick advances (or on first sample).
 func (h *sparkHistory) push(tick, data, compute int) {
-	if tick == h.tick {
+	if tick <= h.tick {
 		return
 	}
 	h.tick = tick
@@ -73,13 +76,7 @@ func renderSparkline(values []int, width int, style *lipgloss.Style) string {
 	for i, v := range window {
 		level := 0
 		if maxV > 0 && v > 0 {
-			level = (v * 4) / maxV
-			if level == 0 {
-				level = 1 // show a blip for any positive value
-			}
-			if level > 4 {
-				level = 4
-			}
+			level = min(max((v*sparkMaxLevel)/maxV, 1), sparkMaxLevel)
 		}
 		runes[i] = sparkLevels[level]
 	}

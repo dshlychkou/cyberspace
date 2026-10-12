@@ -32,7 +32,9 @@ func main() {
 
 	_, err := p.Run()
 	stop()
-	model.Shutdown()
+	if shutdownErr := model.Shutdown(); shutdownErr != nil {
+		log.Printf("Error stopping game engine: %v", shutdownErr)
+	}
 	if err != nil {
 		log.Fatalf("Error running game: %v", err)
 	}
