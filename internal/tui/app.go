@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -25,6 +26,33 @@ const (
 	screenSettings
 	screenAbout
 	screenLoad
+)
+
+const (
+	engineStartTimeout   = 5 * time.Second
+	engineStopTimeout    = 5 * time.Second
+	engineReceiveTimeout = 10 * time.Second
+	engineReplyTimeout   = 5 * time.Second
+
+	minTickRate  = 100 * time.Millisecond
+	maxTickRate  = 2 * time.Second
+	tickRateStep = 100 * time.Millisecond
+
+	engineInputBuffer = 32
+
+	minTermWidth  = 60
+	minTermHeight = 20
+
+	sidebarMaxWidth     = 28
+	sidebarWidthDivisor = 3
+	footerRows          = 3
+	detailHeight        = 3
+	eventHeight         = 6
+	minPanelGraphHeight = 8
+
+	hitTestAspectX    = 0.5
+	hitTestMaxDist    = 4.0
+	navAngularPenalty = 2.0
 )
 
 const (
@@ -147,6 +175,12 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = string(msg)
 		return m, nil
 
+	case stateMsg:
+		if m.gameInProgress() {
+			m.state = game.StateSnapshot(msg)
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		// Clamp index to valid range
 		if m.menuIdx >= len(items) {
@@ -155,7 +189,6 @@ func (m *Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "q", keyCtrlC:
-			m.destroyGame()
 			return m, tea.Quit
 		case keyUp, "k":
 			if m.menuIdx > 0 {
@@ -180,7 +213,9 @@ func (m *Model) handleMenuAction(action menuAction) (tea.Model, tea.Cmd) {
 		cmd := m.saveGame()
 		return m, cmd
 	case menuNewGame:
-		m.destroyGame()
+		if err := m.destroyGame(); err != nil {
+			return m, nil
+		}
 		return m.startGame()
 	case menuLoad:
 		m.screen = screenLoad
@@ -272,9 +307,9 @@ func (m *Model) handleGameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "+", "=":
-		m.adjustSpeed(-100 * time.Millisecond)
+		m.adjustSpeed(-tickRateStep)
 	case "-":
-		m.adjustSpeed(100 * time.Millisecond)
+		m.adjustSpeed(tickRateStep)
 	default:
 		if m.handleCameraKey(msg) {
 			return m, nil
@@ -309,15 +344,8 @@ const (
 )
 
 func cameraKeyDir(msg tea.KeyPressMsg) (camKey, bool) {
-	for _, tok := range []string{msg.String(), msg.Text, string(msg.Code)} {
-		if tok == "" {
-			continue
-		}
-		if dir, ok := cameraKeyMap[tok]; ok {
-			return dir, true
-		}
-	}
-	return 0, false
+	dir, ok := cameraKeyMap[msg.String()]
+	return dir, ok
 }
 
 var cameraKeyMap = map[string]camKey{
@@ -338,8 +366,8 @@ func (m *Model) pauseAndReturnToMenu() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) destroyGame() {
-	m.stopEngine()
+func (m *Model) destroyGame() error {
+	err := m.stopEngine()
 	m.state = game.StateSnapshot{}
 	m.selectedNodeID = 0
 	m.nodePositions = nil
@@ -348,6 +376,10 @@ func (m *Model) destroyGame() {
 	m.cam.reset()
 	m.sparks.reset()
 	m.ws.reset()
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to stop game: %v", err)
+	}
+	return err
 }
 
 func (m *Model) continueGame() (tea.Model, tea.Cmd) {
@@ -358,7 +390,9 @@ func (m *Model) continueGame() (tea.Model, tea.Cmd) {
 
 func (m *Model) handleRestart() (tea.Model, tea.Cmd) {
 	if m.state.GameOver {
-		m.destroyGame()
+		if err := m.destroyGame(); err != nil {
+			return m, nil
+		}
 		return m.startGame()
 	}
 	return m, nil
@@ -366,12 +400,7 @@ func (m *Model) handleRestart() (tea.Model, tea.Cmd) {
 
 func (m *Model) adjustSpeed(delta time.Duration) {
 	m.tickRate += delta
-	if m.tickRate < 100*time.Millisecond {
-		m.tickRate = 100 * time.Millisecond
-	}
-	if m.tickRate > 2*time.Second {
-		m.tickRate = 2 * time.Second
-	}
+	m.tickRate = min(max(m.tickRate, minTickRate), maxTickRate)
 }
 
 func (m *Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -430,11 +459,11 @@ func (m *Model) startEngineWithState(gameState *game.State) (tea.Model, tea.Cmd)
 
 	engineActor, err := actor.StartNew[*game.State](
 		engineCtx,
-		5*time.Second,
+		engineStartTimeout,
 		actor.WithProvider[*game.State](&StateProvider{State: gameState}),
 		actor.WithName[*game.State]("game-engine"),
-		actor.WithInputBufferSize[*game.State](32),
-		actor.WithReceiveTimeout[*game.State](10*time.Second),
+		actor.WithInputBufferSize[*game.State](engineInputBuffer),
+		actor.WithReceiveTimeout[*game.State](engineReceiveTimeout),
 		actor.WithMiddleware(
 			middleware.Recovery[*game.State](logger.New(logger.Config{Level: logger.ErrorLevel})),
 			middleware.MetricsMiddleware[*game.State](metrics),
@@ -515,7 +544,7 @@ func (m *Model) saveGame() tea.Cmd {
 		var sf game.SaveFile
 		select {
 		case sf = <-done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(engineReplyTimeout):
 			return errorMsg("save timeout")
 		}
 
@@ -535,7 +564,9 @@ func (m *Model) saveGame() tea.Cmd {
 }
 
 func (m *Model) loadGame(path string) (tea.Model, tea.Cmd) {
-	m.destroyGame()
+	if err := m.destroyGame(); err != nil {
+		return m, nil
+	}
 
 	sf, err := game.ReadSaveFile(path)
 	if err != nil {
@@ -583,9 +614,9 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) renderGame() string {
-	if m.width < 60 || m.height < 20 {
+	if m.width < minTermWidth || m.height < minTermHeight {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			styleError.Render("Terminal too small. Need at least 60x20."))
+			styleError.Render(fmt.Sprintf("Terminal too small. Need at least %dx%d.", minTermWidth, minTermHeight)))
 	}
 
 	d := m.panelDimensions()
@@ -602,7 +633,7 @@ func (m *Model) renderGame() string {
 	eventLog := renderEventLog(m.state.Events, d.eventHeight)
 
 	// Sidebar — CRT workstation console
-	sidebar := renderSidebar(&m.state, m.selectedNodeID, d.sidebarWidth-4, d.innerHeight, &m.ws)
+	sidebar := renderSidebar(&m.state, m.selectedNodeID, d.sidebarWidth-panelChromeCols, d.innerHeight, &m.ws)
 
 	// Compose left panel with explicit height to match terminal
 	leftPanel := stylePanel.Width(d.mainWidth).Height(d.innerHeight).Render(
@@ -620,14 +651,14 @@ func (m *Model) renderGame() string {
 	// Join horizontally
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	footer := styleEvent.Render(fmt.Sprintf(
+	footer := truncateWS(styleEvent.Render(fmt.Sprintf(
 		"arrows select  ·  h/l rotate  ·  S −%dD  V −%dC  ·  Spc  +/-  Esc  ·  cyan=links of selection",
-		m.state.ProgramSpawnCost, m.state.VirusDeployCost))
+		m.state.ProgramSpawnCost, m.state.VirusDeployCost)), m.width)
 
 	// Status bar
 	statusBar := ""
 	if m.statusMsg != "" {
-		statusBar = styleError.Render(m.statusMsg)
+		statusBar = truncateWS(styleError.Render(m.statusMsg), m.width)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, body, footer, statusBar)
@@ -662,7 +693,7 @@ func (m *Model) sendSnapshotCmd(errPrefix string, build func(func(game.StateSnap
 		select {
 		case snap := <-done:
 			return stateMsg(snap)
-		case <-time.After(5 * time.Second):
+		case <-time.After(engineReplyTimeout):
 			return errorMsg(errPrefix + " timeout")
 		}
 	}
@@ -706,10 +737,10 @@ func (m *Model) sendCmd(build func(onComplete func(bool, string)) actor.Executab
 			select {
 			case snap := <-snapDone:
 				return stateMsg(snap)
-			case <-time.After(5 * time.Second):
+			case <-time.After(engineReplyTimeout):
 				return errorMsg(errPrefix + " refresh timeout")
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(engineReplyTimeout):
 			return errorMsg(errPrefix + " timeout")
 		}
 	}
@@ -740,19 +771,11 @@ type panelDims struct {
 }
 
 func (m *Model) panelDimensions() panelDims {
-	sidebarWidth := min(28, m.width/3)
-	mainWidth := m.width - sidebarWidth - 2
-
-	// Panel borders + padding consume 4 cols (border 2 + padding 2) and 2 rows (border top+bottom)
-	innerWidth := mainWidth - 4
-	panelHeight := m.height - 3 // footer + status bar
-	innerHeight := panelHeight - 2
-
-	// Vertical budget: HUD(2) + graph + details(3) + eventlog(eventHeight)
-	const hudHeight = 2
-	const detailHeight = 3
-	const eventHeight = 6
-	graphHeight := max(innerHeight-hudHeight-detailHeight-eventHeight, 8)
+	sidebarWidth := min(sidebarMaxWidth, m.width/sidebarWidthDivisor)
+	mainWidth := m.width - sidebarWidth - panelBorderCols
+	innerWidth := mainWidth - panelChromeCols
+	innerHeight := m.height - footerRows - panelChromeRows
+	graphHeight := max(innerHeight-hudHeight-detailHeight-eventHeight, minPanelGraphHeight)
 
 	return panelDims{
 		sidebarWidth: sidebarWidth,
@@ -775,11 +798,8 @@ func (m *Model) computeNodePositions() {
 }
 
 func (m *Model) computeGraphOffset() {
-	// stylePanel: Border(RoundedBorder()) = 1 cell each side, Padding(0, 1) = 1 cell left/right
-	// x offset: border(1) + padding(1) = 2
-	// y offset: border(1) + HUD lines(2) = 3
-	m.graphOffset.x = 2
-	m.graphOffset.y = 3
+	m.graphOffset.x = panelBorder + panelPaddingX
+	m.graphOffset.y = panelBorder + hudHeight
 }
 
 func (m *Model) hitTestNode(termX, termY int) (uint64, bool) {
@@ -793,19 +813,18 @@ func (m *Model) hitTestNode(termX, termY int) (uint64, bool) {
 
 	var bestID uint64
 	bestDist := math.MaxFloat64
-	const maxDist = 4.0
 
 	for _, p := range m.nodePositions {
-		dx := float64(localX-p.x) * 0.5 // weight horizontal by 0.5 for terminal aspect ratio
+		dx := float64(localX-p.x) * hitTestAspectX
 		dy := float64(localY - p.y)
 		dist := math.Sqrt(dx*dx + dy*dy)
-		if dist < bestDist && dist <= maxDist {
+		if dist < bestDist && dist <= hitTestMaxDist {
 			bestDist = dist
 			bestID = p.id
 		}
 	}
 
-	if bestDist <= maxDist {
+	if bestDist <= hitTestMaxDist {
 		return bestID, true
 	}
 	return 0, false
@@ -854,7 +873,7 @@ func (m *Model) spatialSelect(dirX, dirY int) uint64 {
 
 		// Cross product magnitude for angular penalty
 		cross := math.Abs(dx*float64(dirY) - dy*float64(dirX))
-		angularPenalty := cross / dist * 2.0
+		angularPenalty := cross / dist * navAngularPenalty
 
 		score := dist + angularPenalty*dist
 		if score < bestScore {
@@ -866,24 +885,36 @@ func (m *Model) spatialSelect(dirX, dirY int) uint64 {
 	return bestID
 }
 
-func (m *Model) stopEngine() {
+func (m *Model) stopEngine() error {
+	var errs []error
+	actorExited := true
 	if m.engineRef != nil {
-		// Use Background so SIGINT-canceled model ctx cannot skip ShutdownCmd.
-		_ = m.engineRef.Receive(context.Background(), &game.ShutdownCmd{})
-		_ = m.engineRef.Stop(5 * time.Second)
+		if err := m.engineRef.Receive(context.Background(), &game.ShutdownCmd{}); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown engine: %w", err))
+		}
+		if err := m.engineRef.Stop(engineStopTimeout); err != nil {
+			errs = append(errs, fmt.Errorf("stop engine: %w", err))
+		}
+		select {
+		case <-m.engineRef.Done():
+		default:
+			actorExited = false
+		}
 		m.engineRef = nil
-	}
-	// Safety net if Receive failed (actor already stopped) — CloseEventLog is idempotent.
-	if m.engineState != nil {
-		m.engineState.CloseEventLog()
-		m.engineState = nil
 	}
 	if m.engineCancel != nil {
 		m.engineCancel()
 		m.engineCancel = nil
 	}
+	if m.engineState != nil {
+		if actorExited {
+			m.engineState.CloseEventLog()
+		}
+		m.engineState = nil
+	}
+	return errors.Join(errs...)
 }
 
-func (m *Model) Shutdown() {
-	m.stopEngine()
+func (m *Model) Shutdown() error {
+	return m.stopEngine()
 }

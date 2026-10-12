@@ -11,6 +11,26 @@ import (
 	"github.com/dshlychkou/cyberspace/v2/internal/network"
 )
 
+const (
+	minRingRadius  = 5
+	fwRingRatio    = 0.28
+	srvRingRatio   = 0.55
+	outerRingRatio = 0.82
+
+	ringTopAngle    = -math.Pi / 2
+	srvRingOffset   = math.Pi / 5
+	outerRingOffset = math.Pi / 7
+
+	nodeMarginLeft   = 7
+	nodeMarginRight  = 8
+	nodeMarginTop    = 1
+	nodeMarginBottom = 4
+
+	minGraphWidth  = 20
+	minGraphHeight = 10
+	legendRows     = 2
+)
+
 type nodePos struct {
 	x, y int
 	id   uint64
@@ -31,20 +51,18 @@ func layoutNodes(snap *game.StateSnapshot, w, h int, cam camera) []nodePos {
 	maxRx := float64(w/2-marginX) / stretchX
 	maxRy := float64(h/2-marginY) / stretchY
 	maxR := math.Min(maxRx, maxRy)
-	if maxR < 5 {
-		maxR = 5
-	}
+	maxR = max(maxR, minRingRadius)
 
 	// Wider ring gaps → less edge crossings through the CORE.
-	r1, r2, r3 := maxR*0.28, maxR*0.55, maxR*0.82
+	r1, r2, r3 := maxR*fwRingRatio, maxR*srvRingRatio, maxR*outerRingRatio
 
 	var positions []nodePos
 	for _, id := range ids.core {
 		positions = append(positions, nodePos{x: cx, y: cy, id: id})
 	}
-	positions = append(positions, ringLayout(ids.fw, cx, cy, r1, -math.Pi/2+cam.yaw, stretchX, stretchY, w, h)...)
-	positions = append(positions, ringLayout(ids.srv, cx, cy, r2, -math.Pi/2+math.Pi/5+cam.yaw, stretchX, stretchY, w, h)...)
-	positions = append(positions, ringLayout(ids.outer, cx, cy, r3, -math.Pi/2+math.Pi/7+cam.yaw, stretchX, stretchY, w, h)...)
+	positions = append(positions, ringLayout(ids.fw, cx, cy, r1, ringTopAngle+cam.yaw, stretchX, stretchY, w, h)...)
+	positions = append(positions, ringLayout(ids.srv, cx, cy, r2, ringTopAngle+srvRingOffset+cam.yaw, stretchX, stretchY, w, h)...)
+	positions = append(positions, ringLayout(ids.outer, cx, cy, r3, ringTopAngle+outerRingOffset+cam.yaw, stretchX, stretchY, w, h)...)
 	return positions
 }
 
@@ -83,8 +101,8 @@ func ringLayout(ids []uint64, cx, cy int, radius, startAngle, stretchX, stretchY
 		angle := startAngle + 2*math.Pi*float64(i)/float64(n)
 		x := cx + int(math.Round(radius*math.Cos(angle)*stretchX))
 		y := cy + int(math.Round(radius*math.Sin(angle)*stretchY))
-		x = clampInt(x, 7, w-8)
-		y = clampInt(y, 1, h-4)
+		x = clampInt(x, nodeMarginLeft, w-nodeMarginRight)
+		y = clampInt(y, nodeMarginTop, h-nodeMarginBottom)
 		out[i] = nodePos{x: x, y: y, id: id}
 	}
 	return out
@@ -101,7 +119,7 @@ func clampInt(v, lo, hi int) int {
 }
 
 func renderGraph(snap *game.StateSnapshot, selectedID uint64, positions []nodePos, w, h int) string {
-	if w < 20 || h < 10 {
+	if w < minGraphWidth || h < minGraphHeight {
 		return "Terminal too small"
 	}
 	if len(positions) == 0 {
@@ -118,7 +136,7 @@ func renderGraph(snap *game.StateSnapshot, selectedID uint64, positions []nodePo
 	c := newCanvas(w, h)
 	drawGraphEdges(c, snap, posMap, selectedID)
 	drawGraphNodes(c, snap, positions, selectedID, neighborSet(selectedID, snap))
-	drawLegend(c, h-2, w)
+	drawLegend(c, h-legendRows, w)
 	return c.render()
 }
 
@@ -257,7 +275,7 @@ func drawNode(c *canvas, pos nodePos, n game.NodeSnapshot, programs, ices, virus
 	c.clearRect(textX, pos.y, textLen, tagH)
 
 	c.drawText(textX, pos.y, nodeText, nodeColor)
-	if pos.y+1 < c.h-2 {
+	if pos.y+1 < c.h-legendRows {
 		drawEntityTags(c, pos.x, pos.y+1, programs, ices, viruses)
 	}
 }

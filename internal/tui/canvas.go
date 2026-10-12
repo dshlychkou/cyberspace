@@ -22,7 +22,20 @@ var brailleBit = [4][2]byte{
 	{0x40, 0x80},
 }
 
-const brailleBase = 0x2800
+const (
+	brailleBase  = 0x2800
+	brailleMax   = brailleBase + 0xFF
+	brailleCellW = 2
+	brailleCellH = 4
+
+	minEdgeSteps     = 2
+	dashedEdgeStride = 3
+	shortEdgeSteps   = 6
+	mediumEdgeSteps  = 12
+	shortEdgePad     = 1
+	mediumEdgePad    = 3
+	longEdgePad      = 5
+)
 
 type cell struct {
 	ch string
@@ -81,11 +94,11 @@ func (c *canvas) setBrailleDot(px, py int, fg color.Color) {
 	if px < 0 || py < 0 {
 		return
 	}
-	cx, cy := px/2, py/4
+	cx, cy := px/brailleCellW, py/brailleCellH
 	if !c.inBounds(cx, cy) {
 		return
 	}
-	lx, ly := px%2, py%4
+	lx, ly := px%brailleCellW, py%brailleCellH
 	bit := brailleBit[ly][lx]
 
 	existing := c.cells[cy][cx]
@@ -102,7 +115,7 @@ func (c *canvas) setBrailleDot(px, py int, fg color.Color) {
 
 func brailleRune(ch string) (rune, bool) {
 	r, size := utf8.DecodeRuneInString(ch)
-	if size != len(ch) || r < brailleBase || r > brailleBase+0xFF {
+	if size != len(ch) || r < brailleBase || r > brailleMax {
 		return 0, false
 	}
 	return r, true
@@ -112,15 +125,15 @@ func brailleRune(ch string) (rune, bool) {
 // Endpoints stay clear for node labels. solid=false sparsifies dots.
 func (c *canvas) drawEdge(x1, y1, x2, y2 int, fg color.Color, solid bool) {
 	// Pixel centers of the two cells.
-	px1 := x1*2 + 1
-	py1 := y1*4 + 2
-	px2 := x2*2 + 1
-	py2 := y2*4 + 2
+	px1 := x1*brailleCellW + brailleCellW/2
+	py1 := y1*brailleCellH + brailleCellH/2
+	px2 := x2*brailleCellW + brailleCellW/2
+	py2 := y2*brailleCellH + brailleCellH/2
 
 	dx := px2 - px1
 	dy := py2 - py1
 	steps := max(abs(dx), abs(dy))
-	if steps < 2 {
+	if steps < minEdgeSteps {
 		return
 	}
 
@@ -129,7 +142,7 @@ func (c *canvas) drawEdge(x1, y1, x2, y2 int, fg color.Color, solid bool) {
 	fy := float64(dy) / float64(steps)
 	stride := 1
 	if !solid {
-		stride = 3
+		stride = dashedEdgeStride
 	}
 
 	for i := pad; i <= steps-pad; i += stride {
@@ -145,12 +158,12 @@ func (c *canvas) drawEdge(x1, y1, x2, y2 int, fg color.Color, solid bool) {
 
 func edgePad(steps int) int {
 	switch {
-	case steps < 6:
-		return 1
-	case steps < 12:
-		return 3
+	case steps < shortEdgeSteps:
+		return shortEdgePad
+	case steps < mediumEdgeSteps:
+		return mediumEdgePad
 	default:
-		return 5 // ~1–1.5 cells clear at each end
+		return longEdgePad
 	}
 }
 

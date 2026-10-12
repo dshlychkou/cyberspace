@@ -4,6 +4,14 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+const (
+	panelBorder     = 1
+	panelPaddingX   = 1
+	panelBorderCols = 2 * panelBorder
+	panelChromeCols = 2 * (panelBorder + panelPaddingX)
+	panelChromeRows = 2 * panelBorder
+)
+
 var (
 	colorNeonGreen   = lipgloss.Color("#39FF14")
 	colorNeonCyan    = lipgloss.Color("#00FFFF")
@@ -64,7 +72,7 @@ var (
 	stylePanel = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
-			Padding(0, 1)
+			Padding(0, panelPaddingX)
 
 	styleScore = lipgloss.NewStyle().
 			Foreground(colorNeonGreen).

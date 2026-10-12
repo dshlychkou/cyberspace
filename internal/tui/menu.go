@@ -10,6 +10,30 @@ import (
 	"github.com/dshlychkou/cyberspace/v2/internal/game"
 )
 
+const (
+	maxConfigTickRate = 5 * time.Second
+
+	settingsLabelWidth = 22
+	settingsPanelWidth = 62
+	infoPanelWidth     = 54
+)
+
+type intRange struct {
+	step, lo, hi int
+}
+
+var (
+	countRange             = intRange{step: 1, lo: 0, hi: 20}
+	positiveCountRange     = intRange{step: 1, lo: 1, hi: 20}
+	smallRange             = intRange{step: 1, lo: 0, hi: 10}
+	positiveSmallRange     = intRange{step: 1, lo: 1, hi: 10}
+	wideRange              = intRange{step: 1, lo: 1, hi: 50}
+	costRange              = intRange{step: 5, lo: 0, hi: 200}
+	resourceRange          = intRange{step: 10, lo: 0, hi: 1000}
+	iceSpawnTickRange      = intRange{step: 5, lo: 5, hi: 200}
+	iceEscalationTickRange = intRange{step: 5, lo: 10, hi: 500}
+)
+
 type menuAction int
 
 const (
@@ -60,20 +84,20 @@ type settingItem struct {
 	Dec    func(*game.Config)
 }
 
-func intSetting(label, desc string, get func(game.Config) int, set func(*game.Config, int), step, lo, hi int) settingItem {
+func intSetting(label, desc string, get func(game.Config) int, set func(*game.Config, int), r intRange) settingItem {
 	return settingItem{
 		Label:  label,
 		Desc:   desc,
 		Format: func(c game.Config) string { return fmt.Sprintf("%d", get(c)) },
 		Inc: func(c *game.Config) {
-			v := get(*c) + step
-			if v <= hi {
+			v := get(*c) + r.step
+			if v <= r.hi {
 				set(c, v)
 			}
 		},
 		Dec: func(c *game.Config) {
-			v := get(*c) - step
-			if v >= lo {
+			v := get(*c) - r.step
+			if v >= r.lo {
 				set(c, v)
 			}
 		},
@@ -86,67 +110,67 @@ var settingsItems = []settingItem{
 		Desc:   "Game speed. Lower = faster ticks, more intense gameplay.",
 		Format: func(c game.Config) string { return c.TickRate.String() },
 		Inc: func(c *game.Config) {
-			if c.TickRate < 5*time.Second {
-				c.TickRate += 100 * time.Millisecond
+			if c.TickRate < maxConfigTickRate {
+				c.TickRate += tickRateStep
 			}
 		},
 		Dec: func(c *game.Config) {
-			if c.TickRate > 100*time.Millisecond {
-				c.TickRate -= 100 * time.Millisecond
+			if c.TickRate > minTickRate {
+				c.TickRate -= tickRateStep
 			}
 		},
 	},
 	intSetting("Initial Programs",
 		"Programs you start with, clustered on one server.",
-		func(c game.Config) int { return c.InitialPrograms }, func(c *game.Config, v int) { c.InitialPrograms = v }, 1, 1, 20),
+		func(c game.Config) int { return c.InitialPrograms }, func(c *game.Config, v int) { c.InitialPrograms = v }, positiveCountRange),
 	intSetting("Initial ICE",
 		"Enemy ICE placed on firewalls at game start. More = harder opening.",
-		func(c game.Config) int { return c.InitialICE }, func(c *game.Config, v int) { c.InitialICE = v }, 1, 0, 20),
+		func(c game.Config) int { return c.InitialICE }, func(c *game.Config, v int) { c.InitialICE = v }, countRange),
 	intSetting("Virus Lifespan",
 		"Ticks before a deployed virus expires. Longer = more ICE converted.",
-		func(c game.Config) int { return c.VirusLifespan }, func(c *game.Config, v int) { c.VirusLifespan = v }, 1, 1, 50),
+		func(c game.Config) int { return c.VirusLifespan }, func(c *game.Config, v int) { c.VirusLifespan = v }, wideRange),
 	intSetting("Core Win Threshold",
 		"Programs needed on CORE to start the win countdown. Higher = harder.",
-		func(c game.Config) int { return c.CoreWinThreshold }, func(c *game.Config, v int) { c.CoreWinThreshold = v }, 1, 1, 10),
+		func(c game.Config) int { return c.CoreWinThreshold }, func(c *game.Config, v int) { c.CoreWinThreshold = v }, positiveSmallRange),
 	intSetting("Core Win Duration",
 		"Consecutive ticks holding CORE with enough programs to win.",
-		func(c game.Config) int { return c.CoreWinDuration }, func(c *game.Config, v int) { c.CoreWinDuration = v }, 1, 1, 50),
+		func(c game.Config) int { return c.CoreWinDuration }, func(c *game.Config, v int) { c.CoreWinDuration = v }, wideRange),
 	intSetting("Data Harvest Rate",
 		"Data earned per tick per program on a vault. Main income source.",
-		func(c game.Config) int { return c.DataHarvestRate }, func(c *game.Config, v int) { c.DataHarvestRate = v }, 1, 1, 50),
+		func(c game.Config) int { return c.DataHarvestRate }, func(c *game.Config, v int) { c.DataHarvestRate = v }, wideRange),
 	intSetting("Program Spawn Cost",
 		"Data spent to manually spawn a program (S key). Higher = slower expansion.",
-		func(c game.Config) int { return c.ProgramSpawnCost }, func(c *game.Config, v int) { c.ProgramSpawnCost = v }, 5, 0, 200),
+		func(c game.Config) int { return c.ProgramSpawnCost }, func(c *game.Config, v int) { c.ProgramSpawnCost = v }, costRange),
 	intSetting("Virus Deploy Cost",
 		"Compute spent to deploy a virus (V key). Viruses convert nearby ICE.",
-		func(c game.Config) int { return c.VirusDeployCost }, func(c *game.Config, v int) { c.VirusDeployCost = v }, 5, 0, 200),
+		func(c game.Config) int { return c.VirusDeployCost }, func(c *game.Config, v int) { c.VirusDeployCost = v }, costRange),
 	intSetting("Program Upkeep",
 		"Data drained per program per tick. More programs = higher burn rate.",
-		func(c game.Config) int { return c.ProgramUpkeep }, func(c *game.Config, v int) { c.ProgramUpkeep = v }, 1, 0, 10),
+		func(c game.Config) int { return c.ProgramUpkeep }, func(c *game.Config, v int) { c.ProgramUpkeep = v }, smallRange),
 	intSetting("Core Hold Cost",
 		"Compute drained per program on CORE per tick. Holding core is expensive.",
-		func(c game.Config) int { return c.CoreHoldCost }, func(c *game.Config, v int) { c.CoreHoldCost = v }, 1, 0, 20),
+		func(c game.Config) int { return c.CoreHoldCost }, func(c *game.Config, v int) { c.CoreHoldCost = v }, countRange),
 	intSetting("Survive Min",
 		"Min neighbor support for program survival. 0 = programs never die alone.",
-		func(c game.Config) int { return c.SurviveMin }, func(c *game.Config, v int) { c.SurviveMin = v }, 1, 0, 10),
+		func(c game.Config) int { return c.SurviveMin }, func(c *game.Config, v int) { c.SurviveMin = v }, smallRange),
 	intSetting("Survive Max",
 		"Max support before overcrowding kills programs. Prevents deathballs.",
-		func(c game.Config) int { return c.SurviveMax }, func(c *game.Config, v int) { c.SurviveMax = v }, 1, 1, 20),
+		func(c game.Config) int { return c.SurviveMax }, func(c *game.Config, v int) { c.SurviveMax = v }, positiveCountRange),
 	intSetting("Spread Exact",
 		"Neighbor programs needed for auto-spread. Higher = slower free expansion.",
-		func(c game.Config) int { return c.SpreadExact }, func(c *game.Config, v int) { c.SpreadExact = v }, 1, 1, 10),
+		func(c game.Config) int { return c.SpreadExact }, func(c *game.Config, v int) { c.SpreadExact = v }, positiveSmallRange),
 	intSetting("Initial Data",
 		"Starting Data resource. Used for spawning programs and paying upkeep.",
-		func(c game.Config) int { return c.InitialData }, func(c *game.Config, v int) { c.InitialData = v }, 10, 0, 1000),
+		func(c game.Config) int { return c.InitialData }, func(c *game.Config, v int) { c.InitialData = v }, resourceRange),
 	intSetting("Initial Compute",
 		"Starting Compute resource. Used for viruses and holding CORE.",
-		func(c game.Config) int { return c.InitialCompute }, func(c *game.Config, v int) { c.InitialCompute = v }, 10, 0, 1000),
+		func(c game.Config) int { return c.InitialCompute }, func(c *game.Config, v int) { c.InitialCompute = v }, resourceRange),
 	intSetting("ICE Spawn Tick",
 		"Tick when first new ICE spawns. Earlier = more pressure sooner.",
-		func(c game.Config) int { return c.ICESpawnTick }, func(c *game.Config, v int) { c.ICESpawnTick = v }, 5, 5, 200),
+		func(c game.Config) int { return c.ICESpawnTick }, func(c *game.Config, v int) { c.ICESpawnTick = v }, iceSpawnTickRange),
 	intSetting("ICE Escalation Tick",
 		"Tick when ICE bursts begin (all firewalls + core). The difficulty spike.",
-		func(c game.Config) int { return c.ICEEscalationTick }, func(c *game.Config, v int) { c.ICEEscalationTick = v }, 5, 10, 500),
+		func(c game.Config) int { return c.ICEEscalationTick }, func(c *game.Config, v int) { c.ICEEscalationTick = v }, iceEscalationTickRange),
 }
 
 func renderMenu(items []menuItem, idx, width, height int, statusMsg string) string {
@@ -216,9 +240,9 @@ func renderSettings(cfg *game.Config, selectedIdx, width, height int) string {
 		Foreground(colorNeonPurple).
 		Render("S E T T I N G S")
 
-	labelStyle := lipgloss.NewStyle().Foreground(colorWhite).Width(22)
+	labelStyle := lipgloss.NewStyle().Foreground(colorWhite).Width(settingsLabelWidth)
 	valueStyle := lipgloss.NewStyle().Foreground(colorNeonCyan)
-	selectedLabel := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Width(22)
+	selectedLabel := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true).Width(settingsLabelWidth)
 	selectedValue := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true)
 	cursorStyle := lipgloss.NewStyle().Foreground(colorNeonPink).Bold(true)
 	arrowStyle := lipgloss.NewStyle().Foreground(colorNeonPurple).Bold(true)
@@ -242,7 +266,7 @@ func renderSettings(cfg *game.Config, selectedIdx, width, height int) string {
 	footer := lipgloss.NewStyle().Foreground(colorNeonViolet).
 		Render("arrows: navigate  left/right: adjust  esc: back")
 
-	panel := stylePanel.Width(62).Render(
+	panel := stylePanel.Width(settingsPanelWidth).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			title,
 			"",
@@ -302,7 +326,7 @@ func renderAbout(width, height int) string {
 
 	footer := lipgloss.NewStyle().Foreground(colorNeonViolet).Render("Press Esc to return.")
 
-	panel := stylePanel.Width(54).Render(
+	panel := stylePanel.Width(infoPanelWidth).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			title,
 			"",

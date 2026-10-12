@@ -85,7 +85,7 @@ func renderLoadScreen(saves []game.SaveFileInfo, idx, width, height int) string 
 	footer := lipgloss.NewStyle().Foreground(colorDim).
 		Render("enter: load  d: delete  esc: back")
 
-	panel := stylePanel.Width(54).Render(
+	panel := stylePanel.Width(infoPanelWidth).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			title,
 			"",

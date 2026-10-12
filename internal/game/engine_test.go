@@ -12,6 +12,12 @@ import (
 	"github.com/dshlychkou/cyberspace/v2/internal/network"
 )
 
+const (
+	actorTimeout = 5 * time.Second
+	replyTimeout = 2 * time.Second
+	pollInterval = 10 * time.Millisecond
+)
+
 func testConfig() Config {
 	return Config{
 		TickRate:            1 * time.Second,
@@ -125,7 +131,7 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 	ctx := context.Background()
 	a, err := actor.StartNew(
 		ctx,
-		5*time.Second,
+		actorTimeout,
 		actor.WithProvider(&stateProvider{state: state}),
 		actor.WithName[*State]("test-engine"),
 		actor.WithInputBufferSize[*State](16),
@@ -134,7 +140,11 @@ func startTestActor(t *testing.T, state *State) *actor.GoActor[*State] {
 	if err != nil {
 		t.Fatalf("failed to start actor: %v", err)
 	}
-	t.Cleanup(func() { _ = a.Stop(5 * time.Second) })
+	t.Cleanup(func() {
+		if err := a.Stop(actorTimeout); err != nil {
+			t.Errorf("stop actor: %v", err)
+		}
+	})
 	return a
 }
 
@@ -152,7 +162,7 @@ func TestShutdownCmdClosesEventLogWithBackgroundCtx(t *testing.T) {
 
 	a, err := actor.StartNew(
 		engineCtx,
-		5*time.Second,
+		actorTimeout,
 		actor.WithProvider(&stateProvider{state: state}),
 		actor.WithName[*State]("shutdown-engine"),
 		actor.WithInputBufferSize[*State](16),
@@ -161,25 +171,26 @@ func TestShutdownCmdClosesEventLogWithBackgroundCtx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start actor: %v", err)
 	}
-	defer func() { _ = a.Stop(5 * time.Second) }()
-
-	// Even if the TUI signal ctx is already canceled, ShutdownCmd still delivers
-	// when Receive uses an independent context (stopEngine uses Background).
-	signalCtx, signalCancel := context.WithCancel(context.Background())
-	signalCancel()
-	_ = signalCtx // documents the SIGINT scenario; Receive may still enqueue if buffer free
+	defer func() {
+		if err := a.Stop(actorTimeout); err != nil {
+			t.Errorf("stop actor: %v", err)
+		}
+	}()
 
 	if err := a.Receive(context.Background(), &ShutdownCmd{}); err != nil {
 		t.Fatalf("Background ShutdownCmd: %v", err)
 	}
-	deadline := time.After(2 * time.Second)
-	for state.eventLogFile != nil || state.eventLogger != nil {
-		select {
-		case <-deadline:
-			t.Fatal("event log still open after ShutdownCmd")
-		default:
-			time.Sleep(5 * time.Millisecond)
-		}
+	synced := make(chan struct{})
+	if err := a.Receive(context.Background(), &GetStateCmd{OnComplete: func(StateSnapshot) { close(synced) }}); err != nil {
+		t.Fatalf("GetStateCmd: %v", err)
+	}
+	select {
+	case <-synced:
+	case <-time.After(replyTimeout):
+		t.Fatal("actor did not process ShutdownCmd")
+	}
+	if state.eventLogFile != nil || state.eventLogger != nil {
+		t.Fatal("event log still open after ShutdownCmd")
 	}
 }
 
@@ -191,7 +202,7 @@ func TestCloseEventLogSafetyNetAfterActorCancel(t *testing.T) {
 	engineCtx, engineCancel := context.WithCancel(context.Background())
 	a, err := actor.StartNew(
 		engineCtx,
-		5*time.Second,
+		actorTimeout,
 		actor.WithProvider(&stateProvider{state: state}),
 		actor.WithName[*State]("cancel-engine"),
 		actor.WithInputBufferSize[*State](16),
@@ -202,7 +213,7 @@ func TestCloseEventLogSafetyNetAfterActorCancel(t *testing.T) {
 	}
 
 	engineCancel() // old SIGINT bug: actor parent ctx dies first
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(replyTimeout)
 	for {
 		err := a.Receive(context.Background(), &ShutdownCmd{})
 		if err != nil {
@@ -212,7 +223,7 @@ func TestCloseEventLogSafetyNetAfterActorCancel(t *testing.T) {
 		case <-deadline:
 			t.Fatal("actor still accepting commands after cancel")
 		default:
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(pollInterval)
 		}
 	}
 
@@ -220,7 +231,11 @@ func TestCloseEventLogSafetyNetAfterActorCancel(t *testing.T) {
 	if state.eventLogger != nil || state.eventLogFile != nil {
 		t.Fatal("safety-net CloseEventLog did not clear log handles")
 	}
-	_ = a.Stop(5 * time.Second)
+	select {
+	case <-a.Done():
+	case <-time.After(actorTimeout):
+		t.Fatal("actor did not exit after cancel")
+	}
 }
 
 func TestTickCmdViaActor(t *testing.T) {
@@ -241,7 +256,7 @@ func TestTickCmdViaActor(t *testing.T) {
 		if snap.Tick != 1 {
 			t.Errorf("expected tick 1, got %d", snap.Tick)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(actorTimeout):
 		t.Fatal("tick command timed out — possible deadlock")
 	}
 }
@@ -279,7 +294,7 @@ func TestSpawnProgramCmdViaActor(t *testing.T) {
 		if msg != "" {
 			t.Fatalf("spawn failed: %s", msg)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(actorTimeout):
 		t.Fatal("spawn command timed out — possible deadlock")
 	}
 }
@@ -307,7 +322,7 @@ func TestMultipleTicksViaActor(t *testing.T) {
 			if snap.Tick != i+1 {
 				t.Errorf("tick %d: expected tick %d, got %d", i, i+1, snap.Tick)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(actorTimeout):
 			t.Fatalf("tick %d timed out — possible deadlock", i)
 		}
 	}

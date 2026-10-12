@@ -13,12 +13,10 @@ type Program struct {
 
 func NewProgram(id int, nodeID uint64) *Program {
 	return &Program{
-		Entity: Entity{
-			ID:     id,
-			Kind:   KindProgram,
-			NodeID: nodeID,
-			Alive:  true,
-		},
-		State: ProgramSpreading,
+		ID:     id,
+		Kind:   KindProgram,
+		NodeID: nodeID,
+		Alive:  true,
+		State:  ProgramSpreading,
 	}
 }

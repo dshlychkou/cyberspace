@@ -37,53 +37,81 @@ func renderHUD(snap *game.StateSnapshot, width int, tickRate time.Duration, spar
 
 	line1 := title + " " + tickStr + speedStr + " " + progStr + " " + iceStr + statusStr
 
-	coreTotal := snap.CoreWinDuration
-	if coreTotal < 1 {
-		coreTotal = 1
+	var line2 string
+	for _, l := range hudGaugeLayouts {
+		line2 = renderHUDGauges(snap, sparks, l)
+		if width <= 0 || lipgloss.Width(line2) <= width {
+			break
+		}
 	}
-	coreGauge := renderGauge(
-		"CORE",
-		snap.CoreHoldLen,
-		coreTotal,
-		12,
-		&styleScore,
-		fmt.Sprintf("%d/%d ≥%dP", snap.CoreHoldLen, coreTotal, snap.CoreWinThreshold),
-	)
-
-	iceCount := len(snap.ICEs)
-	progCount := len(snap.Programs)
-	threatPct := 0
-	if progCount+iceCount > 0 {
-		threatPct = (iceCount * 100) / (progCount + iceCount)
-	}
-	threatStyle := styleThreatLow
-	switch {
-	case threatPct > 70:
-		threatStyle = styleThreatHigh
-	case threatPct > 40:
-		threatStyle = styleThreatMed
-	}
-	threatGauge := renderGauge("Threat", threatPct, 100, 12, &threatStyle, fmt.Sprintf("%d%%", threatPct))
-
-	dataNet := snap.DataIncome - snap.DataBurn
-	computeNet := snap.ComputeIncome - snap.ComputeBurn
-	var dataSpark, computeSpark string
-	if sparks != nil {
-		dataSpark = renderSparkline(sparks.data, sparkWidth, &styleScore)
-		computeSpark = renderSparkline(sparks.compute, sparkWidth, &styleSelected)
-	}
-	dataStr := styleHUD.Render("D ") + dataSpark + " " + formatRate(snap.Resources.Data, dataNet)
-	computeStr := styleHUD.Render("C ") + computeSpark + " " + formatRate(snap.Resources.Compute, computeNet)
-
-	line2 := coreGauge + "  " + threatGauge + "  " + dataStr + "  " + computeStr
 	if width > 0 {
-		pad := width - lipgloss.Width(line2)
-		if pad > 0 {
+		line1 = truncateWS(line1, width)
+		line2 = truncateWS(line2, width)
+		if pad := width - lipgloss.Width(line2); pad > 0 {
 			line2 += strings.Repeat(" ", pad)
 		}
 	}
 
 	return line1 + "\n" + line2
+}
+
+const (
+	hudHeight = 2
+
+	gaugeBarFull    = 12
+	gaugeBarCompact = 8
+	gaugeBarMin     = 5
+
+	percentMax    = 100
+	threatHighPct = 70
+	threatMedPct  = 40
+)
+
+type hudGaugeLayout struct {
+	barLen, sparkLen int
+	detail           bool
+}
+
+var hudGaugeLayouts = []hudGaugeLayout{
+	{barLen: gaugeBarFull, sparkLen: sparkWidth, detail: true},
+	{barLen: gaugeBarCompact, sparkLen: gaugeBarCompact},
+	{barLen: gaugeBarMin, sparkLen: gaugeBarMin},
+}
+
+func renderHUDGauges(snap *game.StateSnapshot, sparks *sparkHistory, l hudGaugeLayout) string {
+	coreTotal := max(snap.CoreWinDuration, 1)
+	coreDetail := fmt.Sprintf("%d/%d", snap.CoreHoldLen, coreTotal)
+	if l.detail {
+		coreDetail += fmt.Sprintf(" ≥%dP", snap.CoreWinThreshold)
+	}
+	coreGauge := renderGauge("CORE", snap.CoreHoldLen, coreTotal, l.barLen, &styleScore, coreDetail)
+
+	iceCount := len(snap.ICEs)
+	progCount := len(snap.Programs)
+	threatPct := 0
+	if progCount+iceCount > 0 {
+		threatPct = (iceCount * percentMax) / (progCount + iceCount)
+	}
+	threatStyle := styleThreatLow
+	switch {
+	case threatPct > threatHighPct:
+		threatStyle = styleThreatHigh
+	case threatPct > threatMedPct:
+		threatStyle = styleThreatMed
+	}
+	threatGauge := renderGauge("Threat", threatPct, percentMax, l.barLen, &threatStyle, fmt.Sprintf("%d%%", threatPct))
+
+	dataNet := snap.DataIncome - snap.DataBurn
+	computeNet := snap.ComputeIncome - snap.ComputeBurn
+	var dataSpark, computeSpark string
+	if sparks != nil {
+		dataSpark = renderSparkline(sparks.data, l.sparkLen, &styleScore) + " "
+		computeSpark = renderSparkline(sparks.compute, l.sparkLen, &styleSelected) + " "
+	}
+	dataStr := styleHUD.Render("D ") + dataSpark + formatRate(snap.Resources.Data, dataNet)
+	computeStr := styleHUD.Render("C ") + computeSpark + formatRate(snap.Resources.Compute, computeNet)
+
+	return coreGauge + "  " + threatGauge + "  " + dataStr + "  " + computeStr
 }
 
 func formatRate(current, net int) string {
@@ -103,13 +131,7 @@ func renderGauge(label string, current, total, barLen int, fillStyle *lipgloss.S
 	if total < 1 {
 		total = 1
 	}
-	filled := (current * barLen) / total
-	if filled > barLen {
-		filled = barLen
-	}
-	if filled < 0 {
-		filled = 0
-	}
+	filled := max(min((current*barLen)/total, barLen), 0)
 
 	var bar strings.Builder
 	bar.WriteString(styleEvent.Render("│"))

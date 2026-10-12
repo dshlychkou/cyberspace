@@ -13,12 +13,10 @@ type ICE struct {
 
 func NewICE(id int, nodeID uint64) *ICE {
 	return &ICE{
-		Entity: Entity{
-			ID:     id,
-			Kind:   KindICE,
-			NodeID: nodeID,
-			Alive:  true,
-		},
-		State: ICEPatrolling,
+		ID:     id,
+		Kind:   KindICE,
+		NodeID: nodeID,
+		Alive:  true,
+		State:  ICEPatrolling,
 	}
 }
